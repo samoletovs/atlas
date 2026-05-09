@@ -35,10 +35,13 @@ export function getPrincipal(req: HttpRequest): ClientPrincipal | null {
 }
 
 export function isAuthorized(p: ClientPrincipal | null): boolean {
-  // Single-user atlas: only Sam's account is allowed
+  // Single-user atlas: only Sam's Google account is allowed
   if (!p) return false;
   if (process.env.NODE_ENV !== 'production') return true;
   const email = p.userDetails?.toLowerCase() ?? '';
-  // SWA built-in AAD provider returns the user's email
-  return email === '146099412+samoletovs@users.noreply.github.com' || email === '146099412+samoletovs@users.noreply.github.comoutlook.com';
+  return (
+    email === 'd.146099412+samoletovs@users.noreply.github.comgmail.com' ||
+    email === '146099412+samoletovs@users.noreply.github.comgmail.com' ||
+    email === '146099412+samoletovs@users.noreply.github.com'
+  );
 }
