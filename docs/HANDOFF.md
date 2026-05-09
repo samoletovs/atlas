@@ -1,15 +1,15 @@
 # atlas — Handoff
 
 > Built end-to-end on 2026-05-09 in autopilot mode.
-> Status: **MVP live**. Phases 0–3 shipped + 5 seed lessons.
+> Status: **MVP deployed**. Phases 0–3 shipped + 5 seed lessons. Auth: Microsoft Entra ID (samoletov@live.com).
 
 ---
 
-## 🎉 The thing actually works
+## Current status
 
 **Live URL:** <https://atlas.naurolabs.com>
 
-Open that on your phone right now. Tap "Sign in with Google". You'll get redirected to Google (your `d.samoletov@gmail.com` works). Land on the "Next up" screen. See the 5 seed lessons. Tap one. Read.
+Sign in with your Microsoft account (`samoletov@live.com`). Google login is not available on Free-tier SWA gen .7 — see [AUTH-GOOGLE.md](AUTH-GOOGLE.md) for the full investigation.
 
 The PWA can be installed: from Chrome on phone → menu → "Add to Home Screen". After that the service worker caches everything for offline reading.
 
@@ -76,16 +76,9 @@ The `--seed` flag uses the hardcoded list of 5 backlog items in `scripts/generat
 
 The agent **already exists** (id stable, name `atlas-teacher`); rerunning the script just generates more lessons against it.
 
-## How to add a custom domain `atlas.naurolabs.com`
+## Custom domain
 
-The DNS for `naurolabs.com` lives in a Google Cloud DNS project that my current account doesn't have access to. To complete the subdomain:
-
-1. **You** sign in to <https://console.cloud.google.com/net-services/dns/zones> with the account that owns `naurolabs.com`
-2. Find the `naurolabs.com` zone
-3. Add a CNAME: `atlas` → `proud-plant-03d885403.7.azurestaticapps.net`
-4. Run `az staticwebapp hostname set -g atlas-rg -n atlas-swa --hostname atlas.naurolabs.com --validation-method cname-delegation`
-5. Wait ~5 min for DNS + Azure to validate
-6. Update `landing-page/projects.json` `appUrl` from the SWA default URL to `https://atlas.naurolabs.com`
+`atlas.naurolabs.com` is already attached to `atlas-swa`. The remaining launch blocker is Google authentication, not DNS.
 
 ## Cost so far
 
@@ -112,7 +105,7 @@ Idle cost going forward: ~€0/month.
 2. Cosmos account names are globally unique. Always use `uniqueString(resourceGroup().id, projectKey)` suffix.
 3. SWA Free tier has no managed identity. For Cosmos auth, use `COSMOS_CONNECTION_STRING` app setting instead of `disableLocalAuth=true`. Trade-off: secret in app settings, but encrypted at rest.
 4. SWA CLI v2.0.9 has a Windows binary issue (`StaticSitesClient.exe` exits 1). Use the official `Azure/static-web-apps-deploy@v1` GitHub Action via push instead.
-5. SWA `staticwebapp.config.json` with custom Google identity provider needs `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` settings. For single-user, default AAD provider (no config) is simpler.
+5. New/current SWA Free tier (gen .7) only preconfigures Microsoft Entra ID and GitHub. Google requires Standard + custom auth (~€8/mo). Atlas uses Microsoft login instead. See [AUTH-GOOGLE.md](AUTH-GOOGLE.md).
 
 ## Phase 4 sketch (the real next step)
 
