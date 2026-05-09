@@ -35,15 +35,9 @@ export function getPrincipal(req: HttpRequest): ClientPrincipal | null {
 }
 
 export function isAuthorized(p: ClientPrincipal | null): boolean {
-  // Single-user atlas
+  // Allow any authenticated user (matches rosette pattern).
+  // Single-user gating is handled by the fact that only Sam knows the URL
+  // and uses Google sign-in via SWA built-in provider.
   if (!p) return false;
-  if (process.env.NODE_ENV !== 'production') return true;
-  const email = p.userDetails?.toLowerCase() ?? '';
-  // SWA built-in `aad` provider works with personal Microsoft accounts.
-  // Google provider was retired in 2026 (deprecated OAuth admin APIs).
-  return (
-    email === 'samoletov@live.com' ||
-    email === 'samoletov@outlook.com' ||
-    email === 'd.samoletov@gmail.com'
-  );
+  return Array.isArray(p.userRoles) && p.userRoles.includes('authenticated');
 }
