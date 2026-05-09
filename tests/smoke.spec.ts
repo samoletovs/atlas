@@ -3,8 +3,7 @@
  *
  * Coverage:
  *   - Home loads, sign-in screen renders
- *   - Click "Sign in with Google" actually redirects to a Google domain
- *     (catches the SW-eats-redirect bug we hit on 2026-05-09)
+ *   - Click "Sign in with Microsoft" actually redirects to Microsoft login
  *   - .auth/me endpoint responds with JSON
  *   - /api/lessons returns 302 redirect to login when unauthenticated
  *
@@ -12,9 +11,31 @@
  * so we test that they redirect correctly. Logged-in flows are covered
  * by the local-dev test (NODE_ENV !== 'production' bypasses isAuthorized).
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const BASE = process.env.ATLAS_BASE_URL ?? 'https://atlas.naurolabs.com';
+
+async function getLoginRedirectChain(page: Page) {
+  const chain: string[] = [];
+  let nextUrl = `${BASE}/.auth/login/aad?post_login_redirect_uri=/`;
+
+  for (let hop = 0; hop < 5; hop += 1) {
+    const resp = await page.request.get(nextUrl, { maxRedirects: 0 });
+    chain.push(`${resp.status()} ${nextUrl}`);
+
+    const location = resp.headers().location;
+    if (!location) break;
+
+    nextUrl = new URL(location, nextUrl).toString();
+    chain.push(nextUrl);
+
+    if (nextUrl.includes('login.microsoftonline.com')) {
+      break;
+    }
+  }
+
+  return chain;
+}
 
 test.describe('atlas smoke', () => {
   test.beforeEach(async ({ page }) => {
@@ -37,22 +58,29 @@ test.describe('atlas smoke', () => {
     await expect(page.getByRole('heading', { name: 'atlas' })).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByRole('link', { name: /sign in with google/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /sign in with microsoft/i })).toBeVisible();
   });
 
-  test('clicking sign-in redirects to Google (regression: SW must not intercept /.auth/*)', async ({
+  test('clicking sign-in redirects to Microsoft login (regression: SW must not intercept /.auth/*)', async ({
     page,
   }) => {
     await page.goto(BASE);
-    await page.waitForSelector('a[href*=".auth/login/google"]', { timeout: 15000 });
+    await page.waitForSelector('a[href*=".auth/login/aad"]', { timeout: 15000 });
 
-    // Click and wait for the cross-origin Google login URL
+    // Click and wait for the cross-origin Microsoft login URL.
     await Promise.all([
-      page.waitForURL(/accounts\.google\.com|oauth2/, { timeout: 30000 }),
-      page.click('a[href*=".auth/login/google"]'),
+      page.waitForURL(/login\.microsoftonline\.com/, { timeout: 30000 }),
+      page.click('a[href*=".auth/login/aad"]'),
     ]);
 
-    expect(page.url()).toMatch(/accounts\.google\.com|oauth2/);
+    expect(page.url()).toMatch(/login\.microsoftonline\.com/);
+  });
+
+  test('/.auth/login/aad ultimately redirects to Microsoft login', async ({
+    page,
+  }) => {
+    const chain = await getLoginRedirectChain(page);
+    expect(chain.join('\n')).toContain('login.microsoftonline.com');
   });
 
   test('/.auth/me responds with JSON (anonymous = clientPrincipal: null)', async ({ page }) => {
@@ -62,20 +90,20 @@ test.describe('atlas smoke', () => {
     expect(body).toHaveProperty('clientPrincipal');
   });
 
-  test('/.auth/login/google returns 302 to identity service (not the React shell)', async ({
+  test('/.auth/login/aad returns 302 to identity service', async ({
     page,
   }) => {
-    const resp = await page.request.get(`${BASE}/.auth/login/google`, { maxRedirects: 0 });
+    const resp = await page.request.get(`${BASE}/.auth/login/aad`, { maxRedirects: 0 });
     // SWA returns 302 Found — body should NOT be HTML
     expect([301, 302, 303, 307]).toContain(resp.status());
     const location = resp.headers()['location'];
-    expect(location).toMatch(/identity\.\d+\.azurestaticapps\.net|accounts\.google\.com/);
+    expect(location).toMatch(/identity\.\d+\.azurestaticapps\.net|login\.microsoftonline\.com/);
   });
 
   test('/.auth/login/done does NOT return 404 (regression: post-login redirect must work)', async ({
     page,
   }) => {
-    // After Google completes, SWA redirects users back to /.auth/login/done.
+    // After login completes, SWA redirects users back to /.auth/login/done.
     // It should redirect (302) or render successfully (200) — never 404.
     const resp = await page.request.get(`${BASE}/.auth/login/done`, { maxRedirects: 0 });
     expect(resp.status()).not.toBe(404);

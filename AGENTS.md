@@ -10,7 +10,7 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - **Backend:** Azure Functions v4 (Node 20, TypeScript)
 - **Database:** Cosmos DB (NoSQL) — containers: `lessons`, `topics`, `activity_events`
 - **Agent:** Microsoft Foundry — reuses [foundryLab](../foundryLab/) account, model `gpt-4o-mini`, temperature 0.2
-- **Auth:** Google OAuth via SWA built-in auth
+- **Auth:** Microsoft Entra ID via SWA built-in auth (Google is not available on Free-tier SWA gen .7; see `docs/AUTH-GOOGLE.md`)
 - **Lesson generation script:** Python 3.11, uses `azure-ai-agents` + `azure-cosmos` SDK
 - **IaC:** Bicep
 - **Region:** `swedencentral` (parallels foundryLab)

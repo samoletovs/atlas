@@ -21,8 +21,8 @@ export function App() {
       <div className="signin">
         <h1>atlas</h1>
         <p className="muted">Personal lessons curated from what you build.</p>
-        <a className="btn-primary" href="/.auth/login/google?post_login_redirect_uri=/">
-          Sign in with Google
+        <a className="btn-primary" href="/.auth/login/aad?post_login_redirect_uri=/">
+          Sign in with Microsoft
         </a>
       </div>
     );
