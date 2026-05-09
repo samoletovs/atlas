@@ -30,6 +30,10 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Critical: never let the SW intercept auth redirects or API auth.
+        // Without this, /.auth/login/* gets served from the index.html cache
+        // and the browser never follows the 302 to the OAuth provider.
+        navigateFallbackDenylist: [/^\/\.auth\//, /^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /\/api\/lessons.*$/,
