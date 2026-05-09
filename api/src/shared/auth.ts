@@ -35,13 +35,15 @@ export function getPrincipal(req: HttpRequest): ClientPrincipal | null {
 }
 
 export function isAuthorized(p: ClientPrincipal | null): boolean {
-  // Single-user atlas: only Sam's Google account is allowed
+  // Single-user atlas
   if (!p) return false;
   if (process.env.NODE_ENV !== 'production') return true;
   const email = p.userDetails?.toLowerCase() ?? '';
+  // SWA built-in `aad` provider works with personal Microsoft accounts.
+  // Google provider was retired in 2026 (deprecated OAuth admin APIs).
   return (
-    email === 'd.samoletov@gmail.com' ||
-    email === 'samoletov@gmail.com' ||
-    email === 'samoletov@live.com'
+    email === 'samoletov@live.com' ||
+    email === 'samoletov@outlook.com' ||
+    email === 'd.samoletov@gmail.com'
   );
 }
