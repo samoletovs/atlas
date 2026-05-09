@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "auth": {
+    "identityProviders": {
+      "google": {
+        "registration": {
+          "clientIdSettingName": "GOOGLE_CLIENT_ID",
+          "clientSecretSettingName": "GOOGLE_CLIENT_SECRET"
+        }
+      }
+    },
+    "rolesSource": "/api/getRoles"
+  },
+  "routes": [
+    {
+      "route": "/api/*",
+      "allowedRoles": ["authenticated"]
+    },
+    {
+      "route": "/login",
+      "redirect": "/.auth/login/google",
+      "statusCode": 302
+    },
+    {
+      "route": "/logout",
+      "redirect": "/.auth/logout",
+      "statusCode": 302
+    },
+    {
+      "route": "/*",
+      "allowedRoles": ["anonymous", "authenticated"]
+    }
+  ],
+  "responseOverrides": {
+    "401": {
+      "redirect": "/.auth/login/google?post_login_redirect_uri=/",
+      "statusCode": 302
+    }
+  },
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": ["/api/*", "/assets/*", "/*.{png,jpg,svg,ico,webmanifest}"]
+  },
+  "globalHeaders": {
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+  },
+  "mimeTypes": {
+    ".webmanifest": "application/manifest+json"
+  }
+}

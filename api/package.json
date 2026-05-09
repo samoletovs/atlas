@@ -1,0 +1,23 @@
+{
+  "name": "atlas-api",
+  "version": "1.0.0",
+  "description": "atlas backend — Azure Functions for the lessons API",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "prestart": "npm run build",
+    "start": "func start",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.7.0",
+    "@azure/functions": "^4.7.0",
+    "@azure/identity": "^4.6.0",
+    "@azure/openai": "^1.0.0-beta.13"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.3"
+  }
+}

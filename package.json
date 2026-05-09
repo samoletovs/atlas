@@ -1,0 +1,26 @@
+{
+  "name": "atlas",
+  "version": "1.0.0",
+  "description": "atlas — personal teacher PWA",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "echo \"No linter configured yet\""
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^6.30.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.5.3",
+    "vite": "^8.0.0",
+    "vite-plugin-pwa": "^1.1.1"
+  }
+}
