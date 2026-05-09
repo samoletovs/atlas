@@ -5,6 +5,30 @@ import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
 import { fetchUser } from './lib/api';
 
+function ThemeToggle() {
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('atlas-theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem('atlas-theme', dark ? 'dark' : 'light');
+  }, [dark]);
+
+  return (
+    <button
+      className="theme-toggle"
+      onClick={() => setDark((d) => !d)}
+      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {dark ? '☀️' : '🌙'}
+    </button>
+  );
+}
+
 export function App() {
   const [user, setUser] = useState<{ userDetails: string } | null | undefined>(undefined);
 
@@ -40,9 +64,15 @@ export function App() {
           <NavLink to="/read">Read</NavLink>
           <NavLink to="/about">About</NavLink>
         </nav>
-        <a className="signout" href="/.auth/logout" title={user.userDetails}>
-          Sign out
-        </a>
+        <div className="topbar-right">
+          <span className="user-info" title={user.userDetails}>
+            {user.userDetails}
+          </span>
+          <ThemeToggle />
+          <a className="signout" href="/.auth/logout">
+            Sign out
+          </a>
+        </div>
       </header>
       <main>
         <Routes>
