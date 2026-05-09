@@ -1,28 +1,34 @@
 /**
  * Cosmos client + helpers — one container client per request.
  *
- * Auth:
- *   - Local dev: DefaultAzureCredential picks up your `az login`
- *   - SWA-hosted Functions: managed identity (Azure AI User on Cosmos)
+ * Auth strategy:
+ *   - If COSMOS_CONNECTION_STRING is set (production / SWA Free tier), use it
+ *   - Otherwise use DefaultAzureCredential (local dev with `az login`,
+ *     or future SWA Standard tier with managed identity)
  */
-import { CosmosClient, Container, FeedOptions } from '@azure/cosmos';
+import { CosmosClient, Container } from '@azure/cosmos';
 import { DefaultAzureCredential } from '@azure/identity';
 
 const endpoint = process.env.COSMOS_ENDPOINT;
+const connectionString = process.env.COSMOS_CONNECTION_STRING;
 const databaseName = process.env.COSMOS_DATABASE ?? 'atlas';
 
-if (!endpoint) {
-  throw new Error('COSMOS_ENDPOINT is not set');
+if (!endpoint && !connectionString) {
+  throw new Error('Either COSMOS_ENDPOINT or COSMOS_CONNECTION_STRING must be set');
 }
 
 let _client: CosmosClient | null = null;
 
 export function cosmosClient(): CosmosClient {
   if (!_client) {
-    _client = new CosmosClient({
-      endpoint: endpoint!,
-      aadCredentials: new DefaultAzureCredential(),
-    });
+    if (connectionString) {
+      _client = new CosmosClient(connectionString);
+    } else {
+      _client = new CosmosClient({
+        endpoint: endpoint!,
+        aadCredentials: new DefaultAzureCredential(),
+      });
+    }
   }
   return _client;
 }
