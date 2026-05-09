@@ -1,6 +1,8 @@
-/* atlas — calm dark theme, mobile-first, big typography */
+/* atlas — calm theme, mobile-first, big typography */
+/* Default: dark. data-theme="light" overrides. */
 
-:root {
+:root,
+[data-theme="dark"] {
   --bg: #0a0a0a;
   --bg-card: #161616;
   --bg-card-hover: #1c1c1c;
@@ -15,6 +17,19 @@
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-serif: 'Iowan Old Style', 'Charter', Cambria, Georgia, serif;
   --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+[data-theme="light"] {
+  --bg: #faf9f7;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f3f1ee;
+  --fg: #1a1a1a;
+  --fg-muted: #666;
+  --fg-subtle: #999;
+  --border: #e0ddd8;
+  --accent: #9b6b3d;
+  --link: #3a7d3e;
+  --error: #c0392b;
 }
 
 * {
@@ -125,6 +140,36 @@ body {
 }
 .signout:hover {
   color: var(--fg-muted);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.user-info {
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  line-height: 1;
+  color: var(--fg-muted);
+}
+.theme-toggle:hover {
+  border-color: var(--fg-muted);
 }
 
 main {
@@ -431,4 +476,6 @@ main {
   .reader h1 { font-size: 1.6rem; }
   .body { font-size: 1.05rem; }
   .topbar nav { gap: 0.6rem; font-size: 0.85rem; }
+  .user-info { display: none; }
+  .topbar { flex-wrap: wrap; }
 }

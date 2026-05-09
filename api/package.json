@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "atlas backend — Azure Functions for the lessons API",
   "type": "module",
+  "main": "dist/functions/*.js",
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
