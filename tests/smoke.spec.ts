@@ -72,6 +72,16 @@ test.describe('atlas smoke', () => {
     expect(location).toMatch(/identity\.\d+\.azurestaticapps\.net|accounts\.google\.com/);
   });
 
+  test('/.auth/login/done does NOT return 404 (regression: post-login redirect must work)', async ({
+    page,
+  }) => {
+    // After Google completes, SWA redirects users back to /.auth/login/done.
+    // It should redirect (302) or render successfully (200) — never 404.
+    const resp = await page.request.get(`${BASE}/.auth/login/done`, { maxRedirects: 0 });
+    expect(resp.status()).not.toBe(404);
+    expect([200, 301, 302, 303, 307, 401]).toContain(resp.status());
+  });
+
   test('/api/lessons (unauth) redirects to login, does not return 200 HTML', async ({ page }) => {
     const resp = await page.request.get(`${BASE}/api/lessons`, { maxRedirects: 0 });
     expect([301, 302, 401]).toContain(resp.status());
