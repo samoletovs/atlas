@@ -1,0 +1,4 @@
+azure-ai-agents>=1.1.0
+azure-identity>=1.25.0
+azure-cosmos>=4.7.0
+python-dotenv>=1.0.1
