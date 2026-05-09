@@ -7,11 +7,13 @@
 
 ## 🎉 The thing actually works
 
-**Live URL:** https://proud-plant-03d885403.7.azurestaticapps.net
+**Live URL:** <https://atlas.naurolabs.com>
 
-Open that on your phone right now. Tap "Sign in with Microsoft". You'll get redirected to Microsoft (your `samoletov@live.com` works). Land on the "Next up" screen. See the 5 seed lessons. Tap one. Read.
+Open that on your phone right now. Tap "Sign in with Google". You'll get redirected to Google (your `d.samoletov@gmail.com` works). Land on the "Next up" screen. See the 5 seed lessons. Tap one. Read.
 
 The PWA can be installed: from Chrome on phone → menu → "Add to Home Screen". After that the service worker caches everything for offline reading.
+
+The Azure default URL `https://proud-plant-03d885403.7.azurestaticapps.net` also works as a fallback.
 
 ## What's deployed (Azure inventory)
 
