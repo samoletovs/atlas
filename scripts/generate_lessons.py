@@ -621,18 +621,116 @@ def run_seed(languages: list[str] | None = None) -> None:
     log.info("Done. Generated %d new lesson(s).", generated)
 
 
+# --- Pending queue mode -----------------------------------------------------
+
+def fetch_pending_lessons(cosmos: CosmosClient) -> list[dict[str, Any]]:
+    """Return all lessons with status='queued' for the current user."""
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
+    items = container.query_items(
+        query="SELECT * FROM c WHERE c.userId = @uid AND c.status = 'queued' ORDER BY c.created_at ASC",
+        parameters=[{"name": "@uid", "value": USER_ID}],
+        enable_cross_partition_query=False,
+        partition_key=USER_ID,
+    )
+    return list(items)
+
+
+def run_pending() -> int:
+    """Drain queued lesson stubs by generating their bodies via the agent.
+
+    Each queued lesson has title + topic + language but empty body. We feed
+    those to the agent and replace the doc with a fully populated lesson.
+    Idempotent — if the run is interrupted, queued stubs remain queued.
+    """
+    cosmos = get_cosmos_client()
+    pending = fetch_pending_lessons(cosmos)
+    if not pending:
+        log.info("Mode: PENDING — no queued lessons.")
+        return 0
+
+    log.info("Mode: PENDING — draining %d queued lesson(s).", len(pending))
+    agents = make_agents_client()
+    agent_id = get_or_create_atlas_agent(agents)
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
+
+    generated = 0
+    for i, doc in enumerate(pending):
+        lang = doc.get("language", "en")
+        title = doc.get("title", "")
+        topic = doc.get("topic", "")
+        depth = doc.get("depth", "intro")
+        rationale = (doc.get("source_event") or {}).get("summary", "")
+
+        log.info("  GEN  %s [%s] %s", topic, lang, title)
+        if i > 0:
+            time.sleep(8)  # gentle on TPM
+
+        # Build context — explain that this was queued from another lesson's
+        # "What to learn next" suggestion so the agent can write a focused piece.
+        context_notes = (
+            f"This lesson was queued from a 'What to learn next' suggestion. "
+            f"Rationale provided: {rationale}. "
+            f"Write a focused {depth}-level lesson on '{topic}'."
+        )
+        if lang == "ru":
+            context_notes = (
+                "IMPORTANT: Write the ENTIRE lesson in Russian (Русский). "
+                "Title, body, citations labels — everything in Russian. "
+                "Keep technical terms in English where natural (e.g. Azure, Cosmos DB, API). "
+                + context_notes
+            )
+
+        backlog_item = {
+            "topic": topic,
+            "depth": depth,
+            "title": title,
+            "source_event": doc.get("source_event"),
+            "context_notes": context_notes,
+        }
+
+        try:
+            payload = generate_lesson(agents, agent_id, backlog_item)
+        except Exception as exc:  # noqa: BLE001
+            log.error("  FAIL %s [%s]: %s", topic, lang, exc)
+            continue
+
+        # Replace the queued doc in place — keeps the same id so any UI
+        # referencing /lesson/<id> continues to work.
+        doc["title"] = payload.get("title", title)
+        doc["topic"] = payload.get("topic", topic)
+        doc["depth"] = payload.get("depth", depth)
+        doc["read_minutes"] = int(payload.get("read_minutes", 4))
+        doc["body"] = payload.get("body", "")
+        doc["citations"] = list(payload.get("citations", []))
+        doc["suggested_next"] = list(payload.get("suggested_next", []))
+        doc["status"] = "published"
+        doc["language"] = lang
+        # Keep created_at, but mark when the body landed
+        doc["published_at"] = datetime.now(timezone.utc).isoformat()
+
+        container.replace_item(item=doc["id"], body=doc)
+        generated += 1
+        log.info("    -> published '%s' [%s] (%d words)", doc["title"], lang, len(doc["body"].split()))
+
+    log.info("Done. Drained %d queued lesson(s).", generated)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", action="store_true", help="generate seed lessons")
+    parser.add_argument("--pending", action="store_true",
+                        help="drain queued lessons (status='queued') by generating their bodies")
     parser.add_argument("--lang", nargs="+", default=["en", "ru"],
-                        help="languages to generate (default: en ru)")
+                        help="languages to generate for --seed (default: en ru)")
     args = parser.parse_args()
+    if args.pending:
+        return run_pending()
     if args.seed:
         run_seed(args.lang)
-    else:
-        log.error("Non-seed mode not yet implemented (Phase 4). Use --seed for now.")
-        return 1
-    return 0
+        return 0
+    log.error("No mode selected. Use --seed or --pending.")
+    return 1
 
 
 if __name__ == "__main__":

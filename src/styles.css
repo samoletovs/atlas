@@ -393,6 +393,103 @@ main {
 .next li strong { font-size: 1rem; color: var(--fg); }
 .next li p { margin: 0.2rem 0 0; font-size: 0.9rem; }
 
+/* "What to learn next" — actionable variants */
+.next-list .next-item {
+  margin-bottom: 1rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--border);
+}
+.next-list .next-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.next-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--fg);
+}
+.next-link {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  color: var(--fg);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+.next-link:hover {
+  color: var(--link);
+}
+.next-link:hover .next-title {
+  color: var(--link);
+}
+.next-arrow {
+  color: var(--link);
+  font-size: 1.1rem;
+  transition: transform 0.15s ease;
+}
+.next-link:hover .next-arrow {
+  transform: translateX(3px);
+}
+.next-list .next-item-link {
+  border-left-color: var(--link);
+}
+.next-list .next-item-queued {
+  border-left-color: var(--fg-muted);
+  opacity: 0.85;
+}
+.next-badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--link);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-link:hover { text-decoration: underline; }
+.btn-link:disabled {
+  color: var(--fg-muted);
+  cursor: progress;
+  text-decoration: none;
+}
+.error-inline {
+  font-size: 0.82rem;
+  color: #c44;
+  margin: 0.3rem 0 0;
+}
+
+/* Coming soon (queued) cards on LessonsList */
+.list-heading-muted {
+  color: var(--fg-muted);
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 2rem;
+}
+.card-queued {
+  opacity: 0.7;
+  cursor: default;
+  border-style: dashed;
+}
+.card-queued:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .reader-actions {
   display: flex;
   gap: 0.75rem;

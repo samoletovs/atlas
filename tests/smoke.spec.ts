@@ -115,6 +115,16 @@ test.describe('atlas smoke', () => {
     expect([301, 302, 401]).toContain(resp.status());
   });
 
+  test('/api/lessons/queue (unauth) redirects to login, does not return 200', async ({ page }) => {
+    // POST should be auth-gated identically to the other endpoints.
+    const resp = await page.request.post(`${BASE}/api/lessons/queue`, {
+      maxRedirects: 0,
+      headers: { 'Content-Type': 'application/json' },
+      data: { title: 'test', topic: 'test', language: 'en' },
+    });
+    expect([301, 302, 401]).toContain(resp.status());
+  });
+
   test('manifest.webmanifest is served with correct content-type', async ({ page }) => {
     const resp = await page.request.get(`${BASE}/manifest.webmanifest`);
     expect(resp.status()).toBe(200);

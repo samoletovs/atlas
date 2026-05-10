@@ -70,3 +70,21 @@ export async function updateLessonState(
   if (!res.ok) throw new Error(`updateLessonState failed: ${res.status}`);
   return (await res.json()) as Lesson;
 }
+
+export interface QueueLessonInput {
+  title: string;
+  topic: string;
+  language: 'en' | 'ru';
+  rationale?: string;
+  source_lesson_id?: string;
+}
+
+export async function queueLesson(input: QueueLessonInput): Promise<Lesson> {
+  const res = await fetch('/api/lessons/queue', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`queueLesson failed: ${res.status}`);
+  return (await res.json()) as Lesson;
+}
