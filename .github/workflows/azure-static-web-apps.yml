@@ -70,3 +70,6 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ATLAS }}
           action: "close"
+          # app_location is unused by `action: close` but required by the
+          # action's input schema (and by the VS Code Actions linter).
+          app_location: "/"
