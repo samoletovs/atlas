@@ -9,6 +9,14 @@ type SuggestionState =
   | { kind: 'generating' }
   | { kind: 'error'; message: string };
 
+/** Escape a string for safe insertion into an HTML attribute value. */
+function escAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
 export function LessonReader() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -49,6 +57,72 @@ export function LessonReader() {
     }
     return map;
   }, [library]);
+
+  // Render the lesson body once, resolving inline [term](topic:slug) links
+  // against the current library. Existing topics → real <a> link. Missing
+  // topics → a small button that triggers inline generation on click.
+  const bodyHtml = useMemo(() => {
+    if (!lesson) return '';
+    return renderMarkdown(lesson.body, {
+      resolveTopicLink: (slug, label) => {
+        const match = topicIndex.get(slug);
+        if (match && match.status !== 'queued') {
+          return `<a class="topic-link" href="/lesson/${match.id}" data-internal="1">${label}</a>`;
+        }
+        if (match && match.status === 'queued') {
+          // Queued (from --pending or batch) — visible but not clickable yet.
+          return `<span class="topic-link topic-link-queued" title="Coming soon">${label}</span>`;
+        }
+        // Not yet in library — clickable generate-on-demand.
+        return (
+          `<button type="button" class="topic-link-missing"` +
+          ` data-topic-generate="${escAttr(slug)}"` +
+          ` data-topic-title="${escAttr(label)}">${label}</button>`
+        );
+      },
+    });
+  }, [lesson, topicIndex]);
+
+  function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
+    const t = e.target as HTMLElement;
+
+    // Internal wiki-link → use react-router (let modifier-clicks open new tab).
+    const link = t.closest('a.topic-link[data-internal="1"]') as HTMLAnchorElement | null;
+    if (link && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      const href = link.getAttribute('href');
+      if (href) navigate(href);
+      return;
+    }
+
+    // Missing-topic generate button → inline generation, navigate on success.
+    const btn = t.closest('button.topic-link-missing') as HTMLButtonElement | null;
+    if (btn && !btn.disabled) {
+      e.preventDefault();
+      const slug = btn.getAttribute('data-topic-generate');
+      const titleAttr = btn.getAttribute('data-topic-title');
+      if (!slug || !titleAttr || !lesson) return;
+      const original = btn.textContent ?? titleAttr;
+      btn.disabled = true;
+      btn.textContent = 'Generating…';
+      generateLessonNow({
+        title: titleAttr,
+        topic: slug,
+        language: lesson.language ?? lang,
+        rationale: `Cross-link from "${lesson.title}"`,
+        source_lesson_id: lesson.id,
+      })
+        .then((generated) => navigate(`/lesson/${generated.id}`))
+        .catch((err) => {
+          btn.disabled = false;
+          btn.textContent = original;
+          const msg = err instanceof Error ? err.message : String(err);
+          // Inline generation from body is a bonus path — fall back to alert
+          // rather than mutate the body DOM further.
+          window.alert(`Couldn’t generate “${titleAttr}”: ${msg}`);
+        });
+    }
+  }
 
   async function handleMarkRead() {
     if (!lesson) return;
@@ -113,7 +187,8 @@ export function LessonReader() {
 
       <div
         className="body"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(lesson.body) }}
+        onClick={handleBodyClick}
+        dangerouslySetInnerHTML={{ __html: bodyHtml }}
       />
 
       {lesson.citations.length > 0 && (
