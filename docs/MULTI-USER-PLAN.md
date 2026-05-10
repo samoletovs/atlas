@@ -124,23 +124,27 @@ Cost: ~41 docs to migrate. RU usage trivial.
 
 ---
 
-## P2 — Invite mode (1–2 days)
+## P2 — Invite mode (1–2 days) ✅ shipped 2026-05-10
 
 ### Goal
 Sam invites people by GitHub handle. They sign in with GitHub, see the `nauroLabs` library, mark lessons read independently. They cannot edit, generate, or invite.
 
-### Changes
+### Changes (shipped — commit `eeba32f`)
 
-- `getRoles` upgraded: reads `repoShares` from Cosmos. If the signed-in `githubLogin` matches a row, return `['member']`. Owner check (Sam) stays as-is.
-- New `/admin` page (owner-only): list shares per repo, invite/revoke by GitHub handle.
-- `getLessons` joins `lessons` (by `repoId`) with `lessonProgress` (filtered to current `userId`).
-- `markLessonRead` writes `lessonProgress`, not the lesson doc.
-- "Generate" / "Add lesson" buttons hidden if role !== `'owner'`.
+- ✅ Auth upgraded to `repoShares` lookup: `auth.ts::resolveRequest` is now async. Role resolution: owner if `repos.ownerId === userId`, member if active `repoShares` row exists. Plus `requireOwner()` helper for catalog writes.
+- ✅ New owner-only Functions: `GET /api/admin/shares`, `POST /api/admin/shares`, `DELETE /api/admin/shares/{githubLogin}`.
+- ✅ `getMe` now returns the union of owned + shared repos with `role` per entry. Unsigned-up GitHub users get an empty `allowedRepos` (frontend renders the Forbidden screen).
+- ✅ Catalog writes (`queueLesson`, `generateLesson`) now require role === 'owner'. Per-user state (`updateLessonState`) and reads remain available to members.
+- ✅ New `/admin` page (owner-only, redirects members home): invite-by-handle form + active/revoked share list with revoke button.
+- ✅ `lessonProgress` was already partitioned by `userId` since P1, so per-member state isolation works without further changes.
+- ⏭️ Hiding owner-only generate/queue buttons in the regular UI was deferred per Sam's "Standard scope" decision — the API still 403s if a member tries.
 
-### Validation
+### Validation (live, post-deploy)
 
-- Invite a friend by their GitHub handle. They sign in. They see only the repo(s) shared with them.
-- They mark a lesson as read. Sam's progress is unchanged.
+- ✅ Sam still has full owner access to `samoletovs__nauroLabs` (verified — owner detected via `repos.ownerId`, not the old static allowlist).
+- ✅ All P1 smoke tests still pass (CI run `25633882840`).
+- ✅ Anonymous probes of `/api/admin/shares*` return 302 to login (auth-gated as expected).
+- 📝 Outstanding manual test: invite a real GitHub user, verify they see the library and can mark progress.
 
 ---
 
