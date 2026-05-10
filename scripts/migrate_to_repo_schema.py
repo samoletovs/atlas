@@ -17,7 +17,10 @@ The original `lessons` container is left untouched as a backup. Drop it manually
 once you've verified everything reads correctly from the new shape.
 
 Defaults: targets the production Cosmos account from atlas/.env. Migrates the
-existing 'sam' library to ownerId='samoletovs', repoId='samoletovs/nauroLabs'.
+existing 'sam' library to ownerId='samoletovs', repoId='samoletovs__nauroLabs'.
+The canonical separator is '__' (double underscore) because Cosmos document IDs
+cannot contain '/'. Pretty URL form (`/r/owner/repo/...`) is reconstructed at the
+route layer.
 
 Usage::
 
@@ -29,7 +32,7 @@ Usage::
 
     # Migrate a custom owner/repo (rare — only if you ran with a different ATLAS_USER_ID)
     python scripts/migrate_to_repo_schema.py --apply --owner-login samoletovs \\
-        --repo-id samoletovs/nauroLabs --github-url https://github.com/samoletovs/nauroLabs-github
+        --repo-id samoletovs__nauroLabs --github-url https://github.com/samoletovs/nauroLabs-github
 """
 from __future__ import annotations
 
@@ -124,7 +127,14 @@ def upsert(container, doc: dict, *, dry_run: bool) -> None:
 
 
 def ensure_repo(container, *, owner_id: str, repo_id: str, github_url: str, dry_run: bool) -> None:
-    name = repo_id.split("/", 1)[-1] if "/" in repo_id else repo_id
+    # Display name = the part after the separator. Supports either '__' (canonical)
+    # or '/' (legacy plan form) just in case someone passes the latter.
+    if "__" in repo_id:
+        name = repo_id.split("__", 1)[-1]
+    elif "/" in repo_id:
+        name = repo_id.split("/", 1)[-1]
+    else:
+        name = repo_id
     doc = {
         "id": repo_id,
         "repoId": repo_id,
@@ -172,8 +182,8 @@ def main() -> int:
     p.add_argument("--owner-login", default="samoletovs", help="GitHub login of the owner. Default: samoletovs")
     p.add_argument(
         "--repo-id",
-        default="samoletovs/nauroLabs",
-        help="Repo identifier in the new schema. Default: samoletovs/nauroLabs",
+        default="samoletovs__nauroLabs",
+        help="Repo identifier in the new schema. Cosmos forbids '/' in document IDs, so we use '__'. Default: samoletovs__nauroLabs",
     )
     p.add_argument(
         "--github-url",
