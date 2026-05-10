@@ -16,10 +16,9 @@
  * returns the existing record without calling the model.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
-import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
-import { AzureOpenAI } from 'openai';
 import { lessonsContainer, ATLAS_USER_ID, Lesson } from '../shared/cosmos.js';
 import { getPrincipal, isAuthorized } from '../shared/auth.js';
+import { getOpenAIClientForUser } from '../shared/openaiClient.js';
 
 interface GenerateBody {
   title?: string;
@@ -29,8 +28,6 @@ interface GenerateBody {
   source_lesson_id?: string;
   depth?: 'intro' | 'intermediate' | 'deep';
 }
-
-const AOAI_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 const LIBRARIAN_INSTRUCTIONS = `You are atlas — a personal teacher for a working consultant pivoting
 from D365 functional work toward Azure / agentic solutions. Your job is to write phone-readable
@@ -85,29 +82,6 @@ fields exactly:
 
 Output ONLY the JSON. No prose around it. No markdown fences. Plain JSON.`;
 
-let _client: AzureOpenAI | null = null;
-
-function getClient(): AzureOpenAI {
-  if (_client) return _client;
-  const endpoint = process.env.FOUNDRY_AOAI_ENDPOINT;
-  const deployment = process.env.FOUNDRY_DEPLOYMENT;
-  const apiVersion = process.env.FOUNDRY_API_VERSION ?? '2024-08-01-preview';
-  if (!endpoint || !deployment) {
-    throw new Error('FOUNDRY_AOAI_ENDPOINT and FOUNDRY_DEPLOYMENT must be set');
-  }
-  // DefaultAzureCredential picks up AZURE_CLIENT_ID / SECRET / TENANT_ID
-  // from App Settings via EnvironmentCredential (no MI on SWA Free).
-  const credential = new DefaultAzureCredential();
-  const azureADTokenProvider = getBearerTokenProvider(credential, AOAI_SCOPE);
-  _client = new AzureOpenAI({
-    endpoint,
-    deployment,
-    apiVersion,
-    azureADTokenProvider,
-  });
-  return _client;
-}
-
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -148,10 +122,10 @@ interface GeneratedLesson {
   suggested_next: { title: string; topic: string; rationale: string }[];
 }
 
-async function callModel(input: GenerateBody, lang: 'en' | 'ru'): Promise<GeneratedLesson> {
-  const client = getClient();
+async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string): Promise<GeneratedLesson> {
+  const { client, deployment } = await getOpenAIClientForUser(userId);
   const completion = await client.chat.completions.create({
-    model: process.env.FOUNDRY_DEPLOYMENT!,
+    model: deployment,
     temperature: 0.4,
     response_format: { type: 'json_object' },
     messages: [
@@ -224,7 +198,7 @@ export async function generateLesson(
   // Generate via the model. This is the slow part (5–15s).
   let generated: GeneratedLesson;
   try {
-    generated = await callModel(body, language);
+    generated = await callModel(body, language, ATLAS_USER_ID);
   } catch (err: unknown) {
     ctx.error('generateLesson model call failed', err);
     const message = err instanceof Error ? err.message : String(err);

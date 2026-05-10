@@ -130,6 +130,89 @@ resource activityContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/c
   }
 }
 
+// ---------------------------------------------------------------------------
+// Multi-repo schema (P1)
+// New containers added alongside `lessons` (which stays as backup until migration is verified).
+// See atlas/docs/MULTI-USER-PLAN.md for the full schema rationale.
+// ---------------------------------------------------------------------------
+
+// Repos: one doc per (owner, repo). A user's "atlas" is a repo entry.
+resource reposContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' = {
+  parent: cosmosDb
+  name: 'repos'
+  properties: {
+    resource: {
+      id: 'repos'
+      partitionKey: {
+        paths: [ '/ownerId' ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
+// Lessons (v2): partitioned by repoId so a single repo's library is hot-path.
+// Schema is otherwise identical to the v1 `lessons` container.
+resource lessonsV2Container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' = {
+  parent: cosmosDb
+  name: 'lessons_v2'
+  properties: {
+    resource: {
+      id: 'lessons_v2'
+      partitionKey: {
+        paths: [ '/repoId' ]
+        kind: 'Hash'
+      }
+      defaultTtl: -1
+    }
+  }
+}
+
+// Per-reader progress: status, readAt, saved. Decouples read state from lesson content.
+resource lessonProgressContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' = {
+  parent: cosmosDb
+  name: 'lessonProgress'
+  properties: {
+    resource: {
+      id: 'lessonProgress'
+      partitionKey: {
+        paths: [ '/userId' ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
+// Repo shares: who can read which repo. Drives getRoles in P2+.
+resource repoSharesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' = {
+  parent: cosmosDb
+  name: 'repoShares'
+  properties: {
+    resource: {
+      id: 'repoShares'
+      partitionKey: {
+        paths: [ '/repoId' ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
+// Users: one doc per signed-in user. P4 will add `byok` here.
+resource usersContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-12-01-preview' = {
+  parent: cosmosDb
+  name: 'users'
+  properties: {
+    resource: {
+      id: 'users'
+      partitionKey: {
+        paths: [ '/userId' ]
+        kind: 'Hash'
+      }
+    }
+  }
+}
+
 // Built-in Cosmos DB Data Contributor role for the owner
 // This is a SQL role assignment, not an Azure RBAC role
 resource cosmosDataContributor 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments@2024-12-01-preview' = {

@@ -41,6 +41,31 @@ export function topicsContainer(): Container {
   return cosmosClient().database(databaseName).container('topics');
 }
 
+// ---------------------------------------------------------------------------
+// Multi-repo schema (P1) — new containers, not yet wired into routes.
+// See atlas/docs/MULTI-USER-PLAN.md.
+// ---------------------------------------------------------------------------
+
+export function reposContainer(): Container {
+  return cosmosClient().database(databaseName).container('repos');
+}
+
+export function lessonsV2Container(): Container {
+  return cosmosClient().database(databaseName).container('lessons_v2');
+}
+
+export function lessonProgressContainer(): Container {
+  return cosmosClient().database(databaseName).container('lessonProgress');
+}
+
+export function repoSharesContainer(): Container {
+  return cosmosClient().database(databaseName).container('repoShares');
+}
+
+export function usersContainer(): Container {
+  return cosmosClient().database(databaseName).container('users');
+}
+
 export const ATLAS_USER_ID = process.env.ATLAS_USER_ID ?? 'sam';
 
 export type LessonStatus = 'queued' | 'drafting' | 'published' | 'read' | 'archived';
@@ -61,4 +86,74 @@ export interface Lesson {
   created_at: string;
   read_at?: string | null;
   saved?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Multi-repo doc shapes (P1).
+// `LessonV2` keeps the same content fields as `Lesson` but adds repo/owner
+// keys and drops per-user state (status, read_at, saved → moved to LessonProgress).
+// ---------------------------------------------------------------------------
+
+export type RepoVisibility = 'private' | 'unlisted' | 'public';
+
+export interface Repo {
+  id: string;            // same as repoId, e.g. 'samoletovs/nauroLabs'
+  repoId: string;
+  ownerId: string;       // partition key, GitHub login of the owner
+  name: string;          // display name, defaults to the repo half of repoId
+  githubUrl: string;
+  visibility: RepoVisibility;
+  createdAt: string;
+}
+
+export interface LessonV2 {
+  id: string;
+  repoId: string;        // partition key
+  ownerId: string;       // denormalized for ACL checks
+  title: string;
+  topic: string;
+  depth: 'intro' | 'intermediate' | 'deep';
+  read_minutes: number;
+  body: string;
+  body_original?: string;
+  citations: string[];
+  suggested_next: { title: string; topic: string; rationale: string }[];
+  source_event?: { type: string; ref: string; summary: string } | null;
+  status: 'queued' | 'drafting' | 'published' | 'archived'; // per-reader 'read' moves to LessonProgress
+  language: 'en' | 'ru';
+  created_at: string;
+}
+
+export interface LessonProgress {
+  id: string;            // `${userId}_${lessonId}`
+  userId: string;        // partition key, GitHub login of the reader
+  repoId: string;        // for cheap filtering
+  lessonId: string;
+  status: 'unread' | 'read';
+  readAt?: string | null;
+  saved?: boolean;
+}
+
+export interface RepoShare {
+  id: string;            // `${repoId}_${githubLogin}`
+  repoId: string;        // partition key
+  githubLogin: string;   // invitee
+  role: 'member';
+  invitedBy: string;     // owner login
+  createdAt: string;
+  revokedAt?: string | null;
+}
+
+export interface AtlasUser {
+  id: string;            // same as userId (GitHub login for now)
+  userId: string;        // partition key
+  githubLogin: string;
+  githubId?: number;     // numeric GitHub user id, filled at first sign-in
+  byok?: {
+    endpoint: string;
+    deployment: string;
+    keyCipher: string;   // AES-256-GCM ciphertext, master key in App Settings (P4)
+    addedAt: string;
+  };
+  createdAt: string;
 }
