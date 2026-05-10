@@ -30,6 +30,12 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Take over immediately on update so users don't get stuck on a
+        // cached broken bundle. Combined with `registerType: 'autoUpdate'`,
+        // this means new builds are live on the next reload (no 2-reload
+        // dance, no manual SW unregister).
+        skipWaiting: true,
+        clientsClaim: true,
         // Critical: never let the SW intercept auth redirects or API auth.
         // Without this, /.auth/login/* gets served from the index.html cache
         // and the browser never follows the 302 to the OAuth provider.
