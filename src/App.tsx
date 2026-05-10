@@ -1,9 +1,31 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { LessonsList } from './pages/LessonsList';
 import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
 import { fetchUser } from './lib/api';
+
+type Lang = 'en' | 'ru';
+const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({
+  lang: 'en',
+  setLang: () => {},
+});
+export function useLang() {
+  return useContext(LangContext);
+}
+
+function LangToggle() {
+  const { lang, setLang } = useLang();
+  return (
+    <button
+      className="lang-toggle"
+      onClick={() => setLang(lang === 'en' ? 'ru' : 'en')}
+      title={lang === 'en' ? 'Переключить на русский' : 'Switch to English'}
+    >
+      {lang === 'en' ? 'RU' : 'EN'}
+    </button>
+  );
+}
 
 function ThemeToggle() {
   const [dark, setDark] = useState(() => {
@@ -31,10 +53,17 @@ function ThemeToggle() {
 
 export function App() {
   const [user, setUser] = useState<{ userDetails: string } | null | undefined>(undefined);
+  const [lang, setLang] = useState<Lang>(() => {
+    return (localStorage.getItem('atlas-lang') as Lang) || 'en';
+  });
 
   useEffect(() => {
     fetchUser().then(setUser);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('atlas-lang', lang);
+  }, [lang]);
 
   if (user === undefined) {
     return <div className="loading">Loading…</div>;
@@ -53,6 +82,7 @@ export function App() {
   }
 
   return (
+    <LangContext.Provider value={{ lang, setLang }}>
     <div className="app-shell">
       <header className="topbar">
         <div className="brand">atlas</div>
@@ -68,6 +98,7 @@ export function App() {
           <span className="user-info" title={user.userDetails}>
             {user.userDetails}
           </span>
+          <LangToggle />
           <ThemeToggle />
           <a className="signout" href="/.auth/logout">
             Sign out
@@ -84,5 +115,6 @@ export function App() {
         </Routes>
       </main>
     </div>
+    </LangContext.Provider>
   );
 }

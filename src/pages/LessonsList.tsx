@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Lesson, listLessons } from '../lib/api';
+import { useLang } from '../App';
 
 interface Props {
   status: string;
 }
 
 export function LessonsList({ status }: Props) {
+  const { lang } = useLang();
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setLessons(null);
-    listLessons(status)
+    setError(null);
+    listLessons(status, lang)
       .then(setLessons)
       .catch((e: Error) => setError(e.message));
-  }, [status]);
+  }, [status, lang]);
 
   if (error) return <div className="error">Couldn’t load lessons: {error}</div>;
   if (!lessons) return <div className="loading">Loading…</div>;

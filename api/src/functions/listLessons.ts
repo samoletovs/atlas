@@ -16,15 +16,16 @@ export async function listLessons(
   }
 
   const status = (req.query.get('status') ?? 'published') as Lesson['status'] | 'saved' | 'all';
+  const lang = req.query.get('lang') ?? 'en';
 
   let query = '';
   if (status === 'all') {
-    query = 'SELECT * FROM c WHERE c.userId = @uid ORDER BY c.created_at DESC';
+    query = 'SELECT * FROM c WHERE c.userId = @uid AND (c.language = @lang OR NOT IS_DEFINED(c.language)) ORDER BY c.created_at DESC';
   } else if (status === 'saved') {
-    query = 'SELECT * FROM c WHERE c.userId = @uid AND c.saved = true ORDER BY c.created_at DESC';
+    query = 'SELECT * FROM c WHERE c.userId = @uid AND c.saved = true AND (c.language = @lang OR NOT IS_DEFINED(c.language)) ORDER BY c.created_at DESC';
   } else {
     query =
-      'SELECT * FROM c WHERE c.userId = @uid AND c.status = @status ORDER BY c.created_at DESC';
+      'SELECT * FROM c WHERE c.userId = @uid AND c.status = @status AND (c.language = @lang OR NOT IS_DEFINED(c.language)) ORDER BY c.created_at DESC';
   }
 
   const container = lessonsContainer();
@@ -34,11 +35,12 @@ export async function listLessons(
       parameters: [
         { name: '@uid', value: ATLAS_USER_ID },
         { name: '@status', value: status },
+        { name: '@lang', value: lang },
       ],
     }, { partitionKey: ATLAS_USER_ID })
     .fetchAll();
 
-  ctx.log(`listLessons: ${resources.length} lessons (status=${status})`);
+  ctx.log(`listLessons: ${resources.length} lessons (status=${status}, lang=${lang})`);
   return { status: 200, jsonBody: { lessons: resources } };
 }
 
