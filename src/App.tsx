@@ -1,14 +1,16 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { LessonsList } from './pages/LessonsList';
 import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
 import { Admin } from './pages/Admin';
+import { AddRepo } from './pages/AddRepo';
 import {
   fetchUser,
   fetchMe,
   AllowedRepo,
   AtlasMe,
+  AtlasQuota,
   AtlasRole,
   ClientPrincipal,
 } from './lib/api';
@@ -37,6 +39,18 @@ const RepoContext = createContext<RepoContextValue>({
 });
 export function useRepo() {
   return useContext(RepoContext);
+}
+
+interface MeContextValue {
+  quota: AtlasQuota;
+  refreshMe: () => Promise<AtlasMe | null>;
+}
+const MeContext = createContext<MeContextValue>({
+  quota: { used: 0, limit: null, remaining: null, resetAt: '' },
+  refreshMe: async () => null,
+});
+export function useMe() {
+  return useContext(MeContext);
 }
 
 function LangToggle() {
@@ -140,6 +154,15 @@ export function App() {
     return localStorage.getItem('atlas-repo') || 'samoletovs__nauroLabs';
   });
 
+  const refreshMe = useCallback(async () => {
+    const me = await fetchMe();
+    if (!me) return null;
+    setState((prev) =>
+      prev.kind === 'ready' ? { ...prev, me } : prev,
+    );
+    return me;
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -152,21 +175,24 @@ export function App() {
       try {
         const me = await fetchMe();
         if (cancelled) return;
-        if (!me || me.allowedRepos.length === 0) {
-          // Authenticated but no repo access (or backend down).
+        if (!me) {
           setState({
             kind: 'forbidden',
             login: principal.userDetails || 'unknown',
           });
           return;
         }
-        // If the persisted repoId isn't in the allowed set, fall back to the first.
-        if (!me.allowedRepos.some((r) => r.repoId === repoId) && me.allowedRepos[0]) {
+        // Empty allowedRepos is no longer "forbidden" — they can add their
+        // own repo via /repos/new. We still go to ready, RepoContext just
+        // has an empty list and `role: null`.
+        if (
+          me.allowedRepos.length > 0 &&
+          !me.allowedRepos.some((r) => r.repoId === repoId)
+        ) {
           setRepoId(me.allowedRepos[0].repoId);
         }
         setState({ kind: 'ready', principal, me });
       } catch (err) {
-        // Network blip — still show the forbidden screen rather than crash.
         console.error('fetchMe failed', err);
         setState({ kind: 'forbidden', login: principal.userDetails || 'unknown' });
       }
@@ -215,46 +241,96 @@ export function App() {
     [repoId, me.allowedRepos, currentRole],
   );
   const langCtxValue = useMemo(() => ({ lang, setLang }), [lang]);
+  const meCtxValue = useMemo<MeContextValue>(
+    () => ({ quota: me.quota, refreshMe }),
+    [me.quota, refreshMe],
+  );
+
+  const hasAnyRepo = me.allowedRepos.length > 0;
 
   return (
     <LangContext.Provider value={langCtxValue}>
       <RepoContext.Provider value={repoCtxValue}>
-        <div className="app-shell">
-          <header className="topbar">
-            <div className="brand">atlas</div>
-            <nav>
-              <NavLink to="/" end>
-                Next up
-              </NavLink>
-              <NavLink to="/saved">Saved</NavLink>
-              <NavLink to="/read">Read</NavLink>
-              {currentRole === 'owner' && <NavLink to="/admin">Admin</NavLink>}
-              <NavLink to="/about">About</NavLink>
-            </nav>
-            <div className="topbar-right">
-              <RepoPicker />
-              <span className="user-info" title={principal.userDetails}>
-                {principal.userDetails}
-              </span>
-              <LangToggle />
-              <ThemeToggle />
-              <a className="signout" href="/.auth/logout">
-                Sign out
-              </a>
-            </div>
-          </header>
-          <main>
-            <Routes>
-              <Route path="/" element={<LessonsList status="published" />} />
-              <Route path="/saved" element={<LessonsList status="saved" />} />
-              <Route path="/read" element={<LessonsList status="read" />} />
-              <Route path="/lesson/:id" element={<LessonReader />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="/about" element={<About />} />
-            </Routes>
-          </main>
-        </div>
+        <MeContext.Provider value={meCtxValue}>
+          <div className="app-shell">
+            <header className="topbar">
+              <div className="brand">atlas</div>
+              <nav>
+                <NavLink to="/" end>
+                  Next up
+                </NavLink>
+                <NavLink to="/saved">Saved</NavLink>
+                <NavLink to="/read">Read</NavLink>
+                {currentRole === 'owner' && <NavLink to="/admin">Admin</NavLink>}
+                <NavLink to="/about">About</NavLink>
+              </nav>
+              <div className="topbar-right">
+                {hasAnyRepo && <RepoPicker />}
+                <NavLink to="/repos/new" className="add-repo-link" title="Add a GitHub repo">
+                  + Add repo
+                </NavLink>
+                <QuotaBadge quota={me.quota} />
+                <span className="user-info" title={principal.userDetails}>
+                  {principal.userDetails}
+                </span>
+                <LangToggle />
+                <ThemeToggle />
+                <a className="signout" href="/.auth/logout">
+                  Sign out
+                </a>
+              </div>
+            </header>
+            <main>
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    hasAnyRepo ? <LessonsList status="published" /> : <NoRepoLanding />
+                  }
+                />
+                <Route path="/saved" element={<LessonsList status="saved" />} />
+                <Route path="/read" element={<LessonsList status="read" />} />
+                <Route path="/lesson/:id" element={<LessonReader />} />
+                <Route path="/admin" element={<Admin />} />
+                <Route path="/repos/new" element={<AddRepo />} />
+                <Route path="/about" element={<About />} />
+              </Routes>
+            </main>
+          </div>
+        </MeContext.Provider>
       </RepoContext.Provider>
     </LangContext.Provider>
+  );
+}
+
+function QuotaBadge({ quota }: { quota: AtlasQuota }) {
+  if (quota.limit === null) return null;
+  const remaining = quota.remaining ?? 0;
+  const tone = remaining === 0 ? 'quota-badge danger' : remaining <= 1 ? 'quota-badge warn' : 'quota-badge';
+  return (
+    <span
+      className={tone}
+      title={`Daily lesson generation cap. Resets at ${new Date(quota.resetAt).toLocaleTimeString()}`}
+    >
+      {quota.used}/{quota.limit}
+    </span>
+  );
+}
+
+function NoRepoLanding() {
+  return (
+    <div className="empty-state">
+      <h2>Welcome to atlas</h2>
+      <p className="muted">
+        atlas teaches you what's in a GitHub repo, one bite-sized lesson at a time.
+      </p>
+      <p className="muted">
+        Add a public GitHub repo to get started — atlas will read its README, code, and
+        recent activity to generate lessons tailored to it.
+      </p>
+      <NavLink to="/repos/new" className="btn-primary">
+        + Add a GitHub repo
+      </NavLink>
+    </div>
   );
 }

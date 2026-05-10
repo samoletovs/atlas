@@ -21,12 +21,21 @@ export interface AllowedRepo {
   role: AtlasRole;
 }
 
+export interface AtlasQuota {
+  used: number;
+  /** null == uncapped */
+  limit: number | null;
+  remaining: number | null;
+  resetAt: string;
+}
+
 export interface AtlasMe {
   userId: string;
   githubLogin: string;
   githubId: number | null;
   createdAt: string;
   allowedRepos: AllowedRepo[];
+  quota: AtlasQuota;
 }
 
 export interface Lesson {
@@ -216,4 +225,39 @@ export async function revokeShare(repoId: string, githubLogin: string): Promise<
   if (!res.ok) throw new Error(`revokeShare failed: ${res.status}`);
   const data = (await res.json()) as { share: RepoShare };
   return data.share;
+}
+
+// ---------- Repo creation (P3) ----------
+
+export interface AddRepoResult {
+  /** Cosmos `repos` doc shape (no `role` — caller is always the owner). */
+  repo: {
+    repoId: string;
+    name: string;
+    ownerId: string;
+    githubUrl: string;
+    visibility: 'private' | 'unlisted' | 'public';
+    createdAt: string;
+  };
+  starterLesson: Lesson | null;
+  alreadyExisted?: boolean;
+}
+
+export async function addRepo(githubUrl: string): Promise<AddRepoResult> {
+  const res = await fetch('/api/repos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ githubUrl }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`addRepo failed: ${res.status}${detail}`);
+  }
+  return (await res.json()) as AddRepoResult;
 }

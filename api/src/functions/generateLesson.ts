@@ -18,6 +18,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse, requireOwner } from '../shared/auth.js';
+import { checkQuota } from '../shared/quota.js';
 import { getOpenAIClientForUser } from '../shared/openaiClient.js';
 
 interface GenerateBody {
@@ -153,6 +154,18 @@ export async function generateLesson(
   const ownerCheck = requireOwner(r);
   if (isHttpResponse(ownerCheck)) return ownerCheck;
   const { userId, repoId, ownerLogin } = r;
+
+  // Daily generation cap. Sam (and anything in ATLAS_UNCAPPED_USERS) is exempt.
+  const quota = await checkQuota(userId);
+  if (quota.exceeded) {
+    return {
+      status: 429,
+      jsonBody: {
+        error: `Daily generation cap reached (${quota.state.used}/${quota.state.limit}). Resets at ${quota.state.resetAt}.`,
+        quota: quota.state,
+      },
+    };
+  }
 
   let body: GenerateBody;
   try {

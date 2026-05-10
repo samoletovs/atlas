@@ -25,6 +25,7 @@ import {
   RepoShare,
 } from '../shared/cosmos.js';
 import { getPrincipal, isAuthenticated, AtlasRole } from '../shared/auth.js';
+import { getQuotaState, QuotaState } from '../shared/quota.js';
 
 interface AllowedRepoEntry {
   repoId: string;
@@ -41,6 +42,8 @@ interface MeResponse {
   githubId: number | null;
   createdAt: string;
   allowedRepos: AllowedRepoEntry[];
+  /** P3: today's generation usage. null limit == uncapped. */
+  quota: QuotaState;
 }
 
 /** Fetch a GitHub user's numeric id via the unauthenticated public API. */
@@ -161,6 +164,7 @@ export async function getMe(
     githubId: user.githubId ?? null,
     createdAt: user.createdAt,
     allowedRepos,
+    quota: await getQuotaState(userId),
   };
 
   return { status: 200, jsonBody: response };

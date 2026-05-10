@@ -143,6 +143,15 @@ test.describe('atlas smoke', () => {
     expect([301, 302, 401]).toContain(resp.status());
   });
 
+  test('/api/repos (unauth POST) redirects to login, does not return 200', async ({ page }) => {
+    const resp = await page.request.post(`${BASE}/api/repos`, {
+      maxRedirects: 0,
+      headers: { 'Content-Type': 'application/json' },
+      data: { githubUrl: 'https://github.com/octocat/hello-world' },
+    });
+    expect([301, 302, 401]).toContain(resp.status());
+  });
+
   test('manifest.webmanifest is served with correct content-type', async ({ page }) => {
     const resp = await page.request.get(`${BASE}/manifest.webmanifest`);
     expect(resp.status()).toBe(200);
