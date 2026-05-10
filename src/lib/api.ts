@@ -9,12 +9,16 @@ export interface ClientPrincipal {
   userRoles: string[];
 }
 
+export type AtlasRole = 'owner' | 'member';
+
 export interface AllowedRepo {
   repoId: string;
   name: string;
   ownerId: string;
   githubUrl: string;
   visibility: 'private' | 'unlisted' | 'public';
+  /** P2: caller's role on this repo. Owners see admin/generate UI. */
+  role: AtlasRole;
 }
 
 export interface AtlasMe {
@@ -163,4 +167,53 @@ export async function generateLessonNow(
     throw new Error(`generateLessonNow failed: ${res.status}${detail}`);
   }
   return (await res.json()) as Lesson;
+}
+
+// ---------- Admin (P2): manage repoShares ----------
+
+export interface RepoShare {
+  id: string;
+  repoId: string;
+  githubLogin: string;
+  role: 'member';
+  invitedBy: string;
+  createdAt: string;
+  revokedAt?: string | null;
+}
+
+export async function listShares(repoId: string): Promise<RepoShare[]> {
+  const res = await fetch(withRepoId('/api/admin/shares', repoId));
+  if (!res.ok) throw new Error(`listShares failed: ${res.status}`);
+  const data = (await res.json()) as { shares: RepoShare[] };
+  return data.shares;
+}
+
+export async function addShare(repoId: string, githubLogin: string): Promise<RepoShare> {
+  const res = await fetch(withRepoId('/api/admin/shares', repoId), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ githubLogin }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`addShare failed: ${res.status}${detail}`);
+  }
+  const data = (await res.json()) as { share: RepoShare };
+  return data.share;
+}
+
+export async function revokeShare(repoId: string, githubLogin: string): Promise<RepoShare> {
+  const res = await fetch(
+    withRepoId(`/api/admin/shares/${encodeURIComponent(githubLogin)}`, repoId),
+    { method: 'DELETE' },
+  );
+  if (!res.ok) throw new Error(`revokeShare failed: ${res.status}`);
+  const data = (await res.json()) as { share: RepoShare };
+  return data.share;
 }

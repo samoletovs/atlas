@@ -9,7 +9,7 @@
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
-import { resolveRequest, isHttpResponse } from '../shared/auth.js';
+import { resolveRequest, isHttpResponse, requireOwner } from '../shared/auth.js';
 
 interface QueueBody {
   title?: string;
@@ -32,8 +32,10 @@ export async function queueLesson(
   req: HttpRequest,
   ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
-  const r = resolveRequest(req);
+  const r = await resolveRequest(req);
   if (isHttpResponse(r)) return r;
+  const ownerCheck = requireOwner(r);
+  if (isHttpResponse(ownerCheck)) return ownerCheck;
   const { repoId, ownerLogin } = r;
 
   let body: QueueBody;

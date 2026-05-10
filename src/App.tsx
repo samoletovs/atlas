@@ -1,9 +1,17 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { LessonsList } from './pages/LessonsList';
 import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
-import { fetchUser, fetchMe, AllowedRepo, AtlasMe, ClientPrincipal } from './lib/api';
+import { Admin } from './pages/Admin';
+import {
+  fetchUser,
+  fetchMe,
+  AllowedRepo,
+  AtlasMe,
+  AtlasRole,
+  ClientPrincipal,
+} from './lib/api';
 
 type Lang = 'en' | 'ru';
 const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({
@@ -18,11 +26,14 @@ interface RepoContextValue {
   repoId: string;
   setRepoId: (r: string) => void;
   allowedRepos: AllowedRepo[];
+  /** Caller's role on the currently-selected repo, or null if unresolvable. */
+  role: AtlasRole | null;
 }
 const RepoContext = createContext<RepoContextValue>({
   repoId: 'samoletovs__nauroLabs',
   setRepoId: () => {},
   allowedRepos: [],
+  role: null,
 });
 export function useRepo() {
   return useContext(RepoContext);
@@ -141,8 +152,8 @@ export function App() {
       try {
         const me = await fetchMe();
         if (cancelled) return;
-        if (!me) {
-          // Authenticated but not allowlisted (or backend down).
+        if (!me || me.allowedRepos.length === 0) {
+          // Authenticated but no repo access (or backend down).
           setState({
             kind: 'forbidden',
             login: principal.userDetails || 'unknown',
@@ -196,10 +207,18 @@ export function App() {
   }
 
   const { principal, me } = state;
+  const currentRole: AtlasRole | null =
+    me.allowedRepos.find((r) => r.repoId === repoId)?.role ?? null;
+
+  const repoCtxValue = useMemo<RepoContextValue>(
+    () => ({ repoId, setRepoId, allowedRepos: me.allowedRepos, role: currentRole }),
+    [repoId, me.allowedRepos, currentRole],
+  );
+  const langCtxValue = useMemo(() => ({ lang, setLang }), [lang]);
 
   return (
-    <LangContext.Provider value={{ lang, setLang }}>
-      <RepoContext.Provider value={{ repoId, setRepoId, allowedRepos: me.allowedRepos }}>
+    <LangContext.Provider value={langCtxValue}>
+      <RepoContext.Provider value={repoCtxValue}>
         <div className="app-shell">
           <header className="topbar">
             <div className="brand">atlas</div>
@@ -209,6 +228,7 @@ export function App() {
               </NavLink>
               <NavLink to="/saved">Saved</NavLink>
               <NavLink to="/read">Read</NavLink>
+              {currentRole === 'owner' && <NavLink to="/admin">Admin</NavLink>}
               <NavLink to="/about">About</NavLink>
             </nav>
             <div className="topbar-right">
@@ -229,6 +249,7 @@ export function App() {
               <Route path="/saved" element={<LessonsList status="saved" />} />
               <Route path="/read" element={<LessonsList status="read" />} />
               <Route path="/lesson/:id" element={<LessonReader />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="/about" element={<About />} />
             </Routes>
           </main>
