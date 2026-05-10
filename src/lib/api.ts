@@ -88,3 +88,26 @@ export async function queueLesson(input: QueueLessonInput): Promise<Lesson> {
   if (!res.ok) throw new Error(`queueLesson failed: ${res.status}`);
   return (await res.json()) as Lesson;
 }
+
+/**
+ * Synchronously generate a lesson body via Azure OpenAI. Takes 5–15s.
+ * Returns a fully populated, published lesson.
+ */
+export async function generateLessonNow(input: QueueLessonInput): Promise<Lesson> {
+  const res = await fetch('/api/lessons/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`generateLessonNow failed: ${res.status}${detail}`);
+  }
+  return (await res.json()) as Lesson;
+}

@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Lesson, getLesson, listLessons, queueLesson, updateLessonState } from '../lib/api';
+import { Lesson, getLesson, listLessons, generateLessonNow, updateLessonState } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
 import { useLang } from '../App';
 
 type SuggestionState =
   | { kind: 'idle' }
-  | { kind: 'queueing' }
-  | { kind: 'queued'; lesson: Lesson }
+  | { kind: 'generating' }
   | { kind: 'error'; message: string };
 
 export function LessonReader() {
@@ -68,19 +67,17 @@ export function LessonReader() {
 
   async function handleQueue(idx: number, suggestion: Lesson['suggested_next'][number]) {
     if (!lesson) return;
-    setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'queueing' } }));
+    setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'generating' } }));
     try {
-      const queued = await queueLesson({
+      const generated = await generateLessonNow({
         title: suggestion.title,
         topic: suggestion.topic,
         language: lesson.language ?? lang,
         rationale: suggestion.rationale,
         source_lesson_id: lesson.id,
       });
-      setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'queued', lesson: queued } }));
-      // Add the queued stub to the local library so subsequent suggestions
-      // referencing the same topic resolve to the queued state immediately.
-      setLibrary((lib) => (lib.find((l) => l.id === queued.id) ? lib : [...lib, queued]));
+      // Navigate straight to the new lesson — the body is already populated.
+      navigate(`/lesson/${generated.id}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'error', message: msg } }));
@@ -155,10 +152,8 @@ export function LessonReader() {
                 );
               }
 
-              // 2. Already queued (either from library or just queued in this session).
-              const isQueued =
-                (match && match.status === 'queued') || state.kind === 'queued';
-              if (isQueued) {
+              // 2. Already queued (from the manual queue path) — surface as "Coming soon".
+              if (match && match.status === 'queued') {
                 return (
                   <li key={i} className="next-item next-item-queued">
                     <div className="next-row">
@@ -170,7 +165,7 @@ export function LessonReader() {
                 );
               }
 
-              // 3. Not in library — offer to queue for generation.
+              // 3. Not in library — offer to generate inline (~10s).
               return (
                 <li key={i} className="next-item next-item-generate">
                   <div className="next-row">
@@ -178,14 +173,21 @@ export function LessonReader() {
                     <button
                       className="btn-link next-generate"
                       onClick={() => handleQueue(i, s)}
-                      disabled={state.kind === 'queueing'}
+                      disabled={state.kind === 'generating'}
                     >
-                      {state.kind === 'queueing' ? 'Queueing…' : 'Generate this →'}
+                      {state.kind === 'generating' ? (
+                        <>
+                          <span className="spinner" aria-hidden="true" />
+                          Generating… (~10s)
+                        </>
+                      ) : (
+                        <>Generate this →</>
+                      )}
                     </button>
                   </div>
                   <p className="muted">{s.rationale}</p>
                   {state.kind === 'error' && (
-                    <p className="error-inline">Couldn’t queue: {state.message}</p>
+                    <p className="error-inline">Couldn’t generate: {state.message}</p>
                   )}
                 </li>
               );
