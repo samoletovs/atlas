@@ -112,6 +112,24 @@ Rules for every lesson you write:
 9. End every lesson with 2–3 "What to learn next" suggestions in JSON format the system can
    parse. Topics adjacent (sideways) or one level deeper.
 
+Markdown formatting (use these to make scanning the lesson on a phone effortless):
+
+10. **Bold** every defined term on first use, plus 1–2 phrases per lesson that capture
+    the central insight. Do not over-bold — fewer than ~6 bolded fragments per lesson.
+11. Use exactly ONE callout per major section (max 3 per lesson) with this syntax:
+       > [!KEY] One-line title (optional)
+       > One or two short sentences with the central takeaway for that section.
+    Available kinds: KEY (the big idea), TIP (practical advice), WARN (common pitfall),
+    REMEMBER (worth memorizing). Pick the one that fits — don't use all four.
+12. Cross-link 3–7 specific concepts to other lessons using the syntax
+    [term](topic:slug-here). Use lowercase, hyphenated slugs that match how a topic
+    would be named (e.g. [managed identity](topic:managed-identity),
+    [retrieval augmented generation](topic:rag)). Only link genuinely useful
+    follow-ups, not every noun. The reader can click the link to either jump
+    to an existing lesson or generate one on demand.
+13. Use bulleted or numbered lists for enumerable trade-offs, steps, or comparisons —
+    they read much better than commas-in-a-paragraph on mobile.
+
 You will be told the topic, depth, and source-event. Output a single JSON object with these
 fields exactly:
 
@@ -129,6 +147,65 @@ fields exactly:
 }
 
 Output ONLY the JSON. No prose around it. No markdown fences. Plain JSON.
+"""
+
+
+# Used by --enhance to retrofit existing lessons with the new formatting.
+ENHANCER_INSTRUCTIONS = """You are atlas-enhancer — a careful editor that retrofits existing lessons
+with a richer markdown format. Do NOT rewrite the lesson. Do NOT change facts, examples,
+or the author's voice. Apply ONLY the markdown enhancements listed below.
+
+Enhancements to apply:
+
+A. **Bold** every defined term on first use, plus 1–2 phrases per lesson that capture
+   the central insight. Aim for 4–6 bolded fragments. If the lesson is already bolded,
+   keep what's there and don't add more.
+
+B. Add 1–3 callouts where they help scanning. Use exactly this syntax — a blockquote
+   that begins with [!KIND]:
+       > [!KEY] One-line title (optional)
+       > One or two short sentences capturing the section's takeaway.
+
+   Available kinds: KEY (the big idea), TIP (practical advice), WARN (common pitfall),
+   REMEMBER (worth memorizing). Pick the one that fits each callout — variety is good
+   but don't force more than 3 total.
+
+C. **MANDATORY:** Cross-link AT LEAST 3 specific terms to other lessons using
+   [term](topic:slug-here). Use lowercase, hyphenated slugs. Prefer slugs from
+   this list of EXISTING topics (so the link resolves to a real lesson):
+
+%KNOWN_TOPICS%
+
+   You may also use slugs that aren't in the list — those will become "generate on
+   demand" pills, which is fine. Pick terms that genuinely point to a different
+   concept worth its own lesson, not every noun.
+
+   Example transformation:
+     before: "Use managed identity instead of API keys for Azure services."
+     after:  "Use [managed identity](topic:azure/identity/managed-identity) instead of API keys for Azure services."
+
+   If you produce ZERO topic: links the lesson is incomplete.
+
+D. If the body has none, you MAY add one short bulleted list (3–5 items) where a
+   paragraph is currently a long sentence enumerating trade-offs. Do not add lists
+   elsewhere.
+
+Hard rules:
+- Preserve the body's overall length (±15%) and section structure.
+- Preserve every existing URL and citation.
+- Do NOT change headings, lists that already exist, code blocks, or facts.
+- Do NOT touch the title, topic, depth, read_minutes, citations, or suggested_next.
+- Match the lesson's language: if it's in Russian, write the new bold terms,
+  callout text, and link labels in Russian (slugs stay English).
+
+Input: a JSON object with the existing lesson body and metadata.
+Output: a single JSON object with EXACTLY this shape:
+
+{
+  "body": "the enhanced markdown body"
+}
+
+Output ONLY the JSON. No prose. No markdown fences. Plain JSON.
 """
 
 
@@ -159,6 +236,34 @@ def get_or_create_atlas_agent(client: AgentsClient) -> str:
         name=name,
         instructions=LIBRARIAN_INSTRUCTIONS,
         temperature=0.4,
+    )
+    return agent.id
+
+
+def get_or_create_enhancer_agent(client: AgentsClient, known_topics: list[str]) -> str:
+    """Return agent_id for atlas-enhancer; bake the known-topics list into instructions.
+
+    Recreates the agent each run so instruction changes always take effect — the
+    Foundry update path can be sticky.
+    """
+    name = "atlas-enhancer"
+    instructions = ENHANCER_INSTRUCTIONS.replace(
+        "%KNOWN_TOPICS%",
+        "\n".join(f"   - {t}" for t in sorted(set(known_topics))) or "   (none yet)",
+    )
+    for agent in client.list_agents():
+        if agent.name == name:
+            log.info("Removing stale agent %s (%s) for fresh recreate", name, agent.id)
+            try:
+                client.delete_agent(agent.id)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("  could not delete: %s", exc)
+    log.info("Creating agent %s", name)
+    agent = client.create_agent(
+        model=FOUNDRY_DEPLOYMENT,
+        name=name,
+        instructions=instructions,
+        temperature=0.2,
     )
     return agent.id
 
@@ -233,6 +338,54 @@ def existing_lesson_topics(cosmos: CosmosClient) -> set[str]:
         partition_key=USER_ID,
     )
     return {f"{i['topic']}:{i['depth']}:{i.get('language', 'en')}" for i in items}
+
+
+def fetch_all_lessons(cosmos: CosmosClient) -> list[dict[str, Any]]:
+    """Return all non-archived lessons for the current user."""
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
+    items = container.query_items(
+        query=(
+            "SELECT * FROM c "
+            "WHERE c.userId = @uid AND (NOT IS_DEFINED(c.status) OR c.status != 'archived') "
+            "ORDER BY c.created_at ASC"
+        ),
+        parameters=[{"name": "@uid", "value": USER_ID}],
+        enable_cross_partition_query=False,
+        partition_key=USER_ID,
+    )
+    return list(items)
+
+
+def slugify(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:50]
+
+
+def known_topic_slugs(lessons: list[dict[str, Any]]) -> list[str]:
+    """Build the list of slug-shaped strings the enhancer can confidently link to.
+
+    Includes: each lesson's `topic` (already slug-shaped) plus a slug derived
+    from the title for human-readable variants.
+    """
+    slugs: set[str] = set()
+    for doc in lessons:
+        topic = doc.get("topic")
+        if topic:
+            slugs.add(topic)
+        title = doc.get("title")
+        if title:
+            slugs.add(slugify(title))
+    return sorted(slugs)
+
+
+def already_enhanced(body: str) -> bool:
+    """Heuristic: a lesson is 'already enhanced' if it has any callouts or topic links."""
+    if not body:
+        return False
+    if re.search(r"^>\s*\[!", body, flags=re.MULTILINE):
+        return True
+    if re.search(r"\]\(topic:", body):
+        return True
+    return False
 
 
 # --- Seed lessons (foundryLab) ----------------------------------------------
@@ -716,20 +869,203 @@ def run_pending() -> int:
     return 0
 
 
+# --- Enhance mode (backfill existing lessons with bold/callouts/links) ------
+
+def enhance_lesson_body(
+    client: AgentsClient,
+    agent_id: str,
+    doc: dict[str, Any],
+    source_body: str,
+    extra_hint: str | None = None,
+) -> str:
+    """Run the enhancer agent on a single lesson; return the enhanced body.
+
+    `source_body` is what gets fed to the model — usually the live body, but
+    body_original on a forced re-enhance.
+    `extra_hint` is an optional additional instruction appended to the user prompt
+    (used for the retry path when the first call ignored cross-links).
+    """
+    payload = {
+        "title": doc.get("title", ""),
+        "topic": doc.get("topic", ""),
+        "language": doc.get("language", "en"),
+        "depth": doc.get("depth", "intro"),
+        "body": source_body,
+    }
+    user_prompt = json.dumps(payload, ensure_ascii=False, indent=2)
+    if extra_hint:
+        user_prompt = f"{user_prompt}\n\nADDITIONAL INSTRUCTION: {extra_hint}"
+
+    thread = client.threads.create()
+    try:
+        client.messages.create(
+            thread_id=thread.id,
+            role=MessageRole.USER,
+            content=user_prompt,
+        )
+        run = client.runs.create_and_process(
+            thread_id=thread.id,
+            agent_id=agent_id,
+        )
+        if str(run.status) != "RunStatus.COMPLETED" and run.status != "completed":
+            raise RuntimeError(f"Run failed: {getattr(run, 'last_error', None)}")
+
+        msgs = list(
+            client.messages.list(
+                thread_id=thread.id,
+                order=ListSortOrder.ASCENDING,
+            ),
+        )
+        agent_msg = next(m for m in reversed(msgs) if m.role == MessageRole.AGENT)
+        text = "\n".join(t.text.value for t in agent_msg.text_messages).strip()
+        # Strip code-fences if model added them despite instructions
+        text = re.sub(r"^```(?:json)?\s*\n", "", text)
+        text = re.sub(r"\n```\s*$", "", text)
+        result = json.loads(text)
+        if "body" not in result or not isinstance(result["body"], str):
+            raise RuntimeError("Enhancer returned no 'body' field")
+        return result["body"]
+    finally:
+        client.threads.delete(thread.id)
+
+
+def _count_topic_links(body: str) -> int:
+    return len(re.findall(r"\]\(topic:", body))
+
+
+def run_enhance(force: bool = False, dry_run: bool = False, limit: int | None = None) -> int:
+    """Backfill existing lessons with bold/callouts/wiki-links.
+
+    Args:
+        force:    re-enhance even lessons that already have callouts or topic links.
+        dry_run:  log what would change but don't write to Cosmos.
+        limit:    process at most N lessons (handy for trial runs).
+    """
+    cosmos = get_cosmos_client()
+    lessons = fetch_all_lessons(cosmos)
+    log.info("Mode: ENHANCE — %d lesson(s) on file", len(lessons))
+
+    todo: list[dict[str, Any]] = []
+    for doc in lessons:
+        if doc.get("status") == "queued":
+            log.info("  SKIP %s [%s] (queued — body not generated yet)",
+                     doc.get("topic"), doc.get("language", "en"))
+            continue
+        if not force and already_enhanced(doc.get("body", "")):
+            log.info("  SKIP %s [%s] (already enhanced)",
+                     doc.get("topic"), doc.get("language", "en"))
+            continue
+        todo.append(doc)
+
+    if limit is not None:
+        todo = todo[:limit]
+
+    log.info("Will process %d lesson(s)%s", len(todo), " (dry run)" if dry_run else "")
+    if not todo:
+        return 0
+
+    if dry_run:
+        for doc in todo:
+            log.info("  WOULD ENHANCE %s [%s] '%s'",
+                     doc.get("topic"), doc.get("language", "en"), doc.get("title"))
+        return 0
+
+    agents = make_agents_client()
+    known = known_topic_slugs(lessons)
+    log.info("Cross-link vocabulary: %d known slug(s)", len(known))
+    agent_id = get_or_create_enhancer_agent(agents, known)
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
+
+    enhanced = 0
+    failed = 0
+    for i, doc in enumerate(todo):
+        topic = doc.get("topic", "")
+        lang = doc.get("language", "en")
+        log.info("  ENH  %s [%s] '%s'", topic, lang, doc.get("title"))
+        if i > 0:
+            time.sleep(8)  # gentle on TPM
+
+        # Source: prefer body_original (preserved from very first enhance) so
+        # repeated --force runs don't compound bolding/links.
+        source_body = doc.get("body_original") or doc.get("body", "")
+        old_len = len(doc.get("body", ""))
+
+        try:
+            new_body = enhance_lesson_body(agents, agent_id, doc, source_body)
+        except Exception as exc:  # noqa: BLE001
+            log.error("  FAIL %s [%s]: %s", topic, lang, exc)
+            failed += 1
+            continue
+
+        # Post-validate: if zero topic: links, retry once with a hard nudge.
+        if _count_topic_links(new_body) == 0:
+            log.warning("  retry %s [%s]: 0 topic-links produced, asking again", topic, lang)
+            time.sleep(4)
+            try:
+                new_body = enhance_lesson_body(
+                    agents, agent_id, doc, source_body,
+                    extra_hint=(
+                        "Your previous output had ZERO topic: links. This is unacceptable. "
+                        "You MUST insert at least 3 [term](topic:slug) cross-links inline. "
+                        "Pick concrete nouns from the body — a tool, a service, a concept — "
+                        "and turn them into links to a related lesson. Return ONLY the JSON {\"body\": \"...\"}."
+                    ),
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.error("  FAIL retry %s [%s]: %s", topic, lang, exc)
+                failed += 1
+                continue
+            if _count_topic_links(new_body) == 0:
+                log.warning("  WARN %s [%s]: still 0 cross-links after retry, accepting anyway", topic, lang)
+
+        new_len = len(new_body)
+        if new_len < len(source_body) * 0.5:
+            log.warning(
+                "  SKIP %s [%s]: enhancer returned suspiciously short body (%d -> %d chars), keeping original",
+                topic, lang, old_len, new_len,
+            )
+            failed += 1
+            continue
+
+        # First time we enhance, snapshot the original.
+        if "body_original" not in doc:
+            doc["body_original"] = doc.get("body", "")
+
+        doc["body"] = new_body
+        doc["enhanced_at"] = datetime.now(timezone.utc).isoformat()
+        container.replace_item(item=doc["id"], body=doc)
+        enhanced += 1
+        log.info("    -> enhanced (%d -> %d chars, %d topic-links)",
+                 old_len, new_len, _count_topic_links(new_body))
+
+    log.info("Done. Enhanced %d / %d lesson(s) (failed: %d).", enhanced, len(todo), failed)
+    return 0 if failed == 0 else 2
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", action="store_true", help="generate seed lessons")
     parser.add_argument("--pending", action="store_true",
                         help="drain queued lessons (status='queued') by generating their bodies")
+    parser.add_argument("--enhance", action="store_true",
+                        help="retrofit existing lessons with bold + callouts + wiki-links")
+    parser.add_argument("--force", action="store_true",
+                        help="(with --enhance) re-process even already-enhanced lessons")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="(with --enhance) print what would change, don't write")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="(with --enhance) process at most N lessons")
     parser.add_argument("--lang", nargs="+", default=["en", "ru"],
                         help="languages to generate for --seed (default: en ru)")
     args = parser.parse_args()
+    if args.enhance:
+        return run_enhance(force=args.force, dry_run=args.dry_run, limit=args.limit)
     if args.pending:
         return run_pending()
     if args.seed:
         run_seed(args.lang)
         return 0
-    log.error("No mode selected. Use --seed or --pending.")
+    log.error("No mode selected. Use --seed, --pending, or --enhance.")
     return 1
 
 
