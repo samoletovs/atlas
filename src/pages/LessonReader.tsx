@@ -21,7 +21,8 @@ export function LessonReader() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { lang } = useLang();
-  const { repoId } = useRepo();
+  const { repoId, role } = useRepo();
+  const isOwner = role === 'owner';
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [library, setLibrary] = useState<Lesson[]>([]);
@@ -74,7 +75,11 @@ export function LessonReader() {
           // Queued (from --pending or batch) — visible but not clickable yet.
           return `<span class="topic-link topic-link-queued" title="Coming soon">${label}</span>`;
         }
-        // Not yet in library — clickable generate-on-demand.
+        // Not yet in library. Owners get a generate-on-demand button;
+        // members see plain text (they can't generate).
+        if (!isOwner) {
+          return `<span class="topic-link topic-link-unavailable" title="Not yet in this library">${label}</span>`;
+        }
         return (
           `<button type="button" class="topic-link-missing"` +
           ` data-topic-generate="${escAttr(slug)}"` +
@@ -82,7 +87,7 @@ export function LessonReader() {
         );
       },
     });
-  }, [lesson, topicIndex]);
+  }, [lesson, topicIndex, isOwner]);
 
   function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
     const t = e.target as HTMLElement;
@@ -242,7 +247,15 @@ export function LessonReader() {
                 );
               }
 
-              // 3. Not in library — offer to generate inline (~10s).
+              // 3. Not in library — owners can generate; members just see the suggestion.
+              if (!isOwner) {
+                return (
+                  <li key={i} className="next-item next-item-info">
+                    <span className="next-title">{s.title}</span>
+                    <p className="muted">{s.rationale}</p>
+                  </li>
+                );
+              }
               return (
                 <li key={i} className="next-item next-item-generate">
                   <div className="next-row">

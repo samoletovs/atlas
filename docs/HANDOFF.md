@@ -1,7 +1,7 @@
 # atlas — Handoff
 
 > Built end-to-end on 2026-05-09 in autopilot mode.
-> Status: **MVP deployed**. Phases 0–3 shipped + 5 seed lessons. Auth: Microsoft Entra ID (samoletov@live.com).
+> Status: **MVP deployed**. Phases 0–3 shipped + 5 seed lessons. Auth: Microsoft Entra ID.
 
 ---
 
@@ -9,7 +9,7 @@
 
 **Live URL:** <https://atlas.naurolabs.com>
 
-Sign in with your Microsoft account (`samoletov@live.com`). Google login is not available on Free-tier SWA gen .7 — see [AUTH-GOOGLE.md](AUTH-GOOGLE.md) for the full investigation.
+Sign in with the lab owner's Microsoft account. Google login is not available on Free-tier SWA gen .7 — see [AUTH-GOOGLE.md](AUTH-GOOGLE.md) for the full investigation.
 
 The PWA can be installed: from Chrome on phone → menu → "Add to Home Screen". After that the service worker caches everything for offline reading.
 
@@ -56,7 +56,7 @@ These are the same content as the 6,400-word foundryLab learning guide, but phon
 ## How to use it from your phone
 
 1. Open <https://proud-plant-03d885403.7.azurestaticapps.net>
-2. Tap "Sign in with Microsoft" → use `samoletov@live.com`
+2. Tap "Sign in with Microsoft"
 3. After sign-in you land on **Next up** with the 5 seed lessons
 4. Tap a card → read in **Reader**
 5. Bottom of reader has [Mark read] and [Save]

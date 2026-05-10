@@ -597,6 +597,12 @@ main {
   color: var(--fg-muted);
   border-bottom: 1px dotted var(--fg-subtle);
 }
+/* Member view of a missing topic — plain muted text, no generate UI. */
+.body .topic-link-unavailable {
+  color: var(--fg-muted);
+  border-bottom: 1px dotted var(--fg-subtle);
+  cursor: help;
+}
 .list-heading-muted {
   color: var(--fg-muted);
   font-size: 0.95rem;
