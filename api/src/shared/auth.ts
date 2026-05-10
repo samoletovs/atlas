@@ -1,33 +1,31 @@
 /**
  * Auth helper — read the SWA-injected x-ms-client-principal header.
  *
- * P1: GitHub-only. Single allowlist. Free-tier SWA so we can't use a
- * `rolesSource` Function — gating happens here. P2 will replace the allowlist
- * with a `repoShares` lookup (and either move to Standard tier with a real
- * `getRoles` Function, or keep it server-side here).
+ * P2: GitHub-only. Authorisation is now driven by Cosmos:
+ *   - role = 'owner' if the caller's GitHub login matches `repos.ownerId`
+ *     for the requested `repoId`.
+ *   - role = 'member' if a `repoShares` row exists with no `revokedAt`.
+ *   - otherwise 403.
  *
  * Locally (no SWA header), pretend the request is from `samoletovs` so the
  * dev loop works against the new schema.
  */
 import { HttpRequest, HttpResponseInit } from '@azure/functions';
+import { reposContainer, repoSharesContainer, Repo, RepoShare } from './cosmos.js';
 
 export interface ClientPrincipal {
   userId: string;
   userDetails: string;       // for github: the lowercase login
-  identityProvider: string;  // 'github' in P1
+  identityProvider: string;  // 'github' in P2
   userRoles: string[];
   claims?: { typ: string; val: string }[];
 }
 
-/**
- * GitHub logins allowed to use atlas in P1. Case-insensitive comparison.
- * P2 will replace this with a `repoShares` lookup keyed on the requested repo.
- */
-export const ALLOWED_GITHUB_LOGINS = ['samoletovs'] as const;
-
-/** Default repo for P1. Matches what the migration wrote into Cosmos. */
+/** Default repo for direct-link routes that don't pass `?repoId=`. */
 export const DEFAULT_REPO_ID = 'samoletovs__nauroLabs';
 export const DEFAULT_OWNER_LOGIN = 'samoletovs';
+
+export type AtlasRole = 'owner' | 'member';
 
 export interface ResolvedRequest {
   principal: ClientPrincipal;
@@ -35,8 +33,12 @@ export interface ResolvedRequest {
   userId: string;
   /** The `<owner>__<repo>` id used as the partition key on `lessons_v2`. */
   repoId: string;
-  /** Owner login (partition key on `repos`). */
+  /** Owner login (partition key on `repos`). Derived from repoId. */
   ownerLogin: string;
+  /** 'owner' if userId === repos.ownerId, else 'member'. */
+  role: AtlasRole;
+  /** The Repo doc, fetched as a side-effect of the role check. */
+  repo: Repo;
 }
 
 export function getPrincipal(req: HttpRequest): ClientPrincipal | null {
@@ -62,51 +64,92 @@ export function getPrincipal(req: HttpRequest): ClientPrincipal | null {
 }
 
 /**
- * True when the principal is a signed-in GitHub user whose login is in the
- * allowlist. We only accept the `github` provider — anything else (legacy
- * `aad` cookies, other providers) is rejected.
+ * True when the principal is a signed-in GitHub user. We accept the `github`
+ * provider (and `local` for dev). Beyond this, ACL is per-repo.
  */
-export function isAuthorized(p: ClientPrincipal | null): boolean {
+export function isAuthenticated(p: ClientPrincipal | null): boolean {
   if (!p) return false;
   if (!Array.isArray(p.userRoles) || !p.userRoles.includes('authenticated')) {
     return false;
   }
-  if (p.identityProvider !== 'github' && p.identityProvider !== 'local') {
-    return false;
-  }
-  const login = (p.userDetails ?? '').toLowerCase();
-  return (ALLOWED_GITHUB_LOGINS as readonly string[]).includes(login);
+  return p.identityProvider === 'github' || p.identityProvider === 'local';
+}
+
+function parseRepoIdParam(req: HttpRequest): string {
+  const requested = req.query.get('repoId');
+  return requested && /^[a-z0-9_]+__[a-z0-9_-]+$/i.test(requested)
+    ? requested
+    : DEFAULT_REPO_ID;
 }
 
 /**
- * Resolve the request into (principal, userId, repoId) for the route handler.
- * Returns either a ResolvedRequest or an HttpResponseInit short-circuit
- * (401 if not signed in, 403 if signed in but not allowlisted).
- *
- * Routes use this as their first line:
- *   const r = resolveRequest(req);
- *   if (isHttpResponse(r)) return r;
- *   const { userId, repoId } = r;
+ * Look up the caller's role for a given repo, or `null` if they have no
+ * access. Used by `resolveRequest` and by `/api/me` when listing repos.
  */
-export function resolveRequest(req: HttpRequest): ResolvedRequest | HttpResponseInit {
+export async function getRoleForRepo(
+  userId: string,
+  repoId: string,
+): Promise<{ role: AtlasRole; repo: Repo } | null> {
+  const ownerLogin = repoId.split('__', 2)[0];
+  const repos = reposContainer();
+  let repo: Repo | undefined;
+  try {
+    const { resource } = await repos.item(repoId, ownerLogin).read<Repo>();
+    repo = resource ?? undefined;
+  } catch (e: unknown) {
+    if (e instanceof Error && (e as { code?: number }).code !== 404) throw e;
+  }
+  if (!repo) return null;
+
+  if (repo.ownerId === userId) {
+    return { role: 'owner', repo };
+  }
+
+  const shares = repoSharesContainer();
+  let share: RepoShare | undefined;
+  try {
+    const { resource } = await shares
+      .item(`${repoId}_${userId}`, repoId)
+      .read<RepoShare>();
+    share = resource ?? undefined;
+  } catch (e: unknown) {
+    if (e instanceof Error && (e as { code?: number }).code !== 404) throw e;
+  }
+  if (share && !share.revokedAt) {
+    return { role: 'member', repo };
+  }
+  return null;
+}
+
+/**
+ * Resolve the request into (principal, userId, repoId, role) for a route handler.
+ * Returns either a ResolvedRequest or an HttpResponseInit short-circuit
+ * (401 if not signed in, 403 if signed in but no role on the requested repo).
+ */
+export async function resolveRequest(
+  req: HttpRequest,
+): Promise<ResolvedRequest | HttpResponseInit> {
   const principal = getPrincipal(req);
-  if (!principal) {
+  if (!isAuthenticated(principal) || !principal) {
     return { status: 401, jsonBody: { error: 'Unauthorized' } };
   }
-  if (!isAuthorized(principal)) {
+
+  const repoId = parseRepoIdParam(req);
+  const userId = principal.userDetails.toLowerCase();
+  const ownerLogin = repoId.split('__', 2)[0];
+
+  const access = await getRoleForRepo(userId, repoId);
+  if (!access) {
     return { status: 403, jsonBody: { error: 'Forbidden' } };
   }
-  // P1: every signed-in (allowlisted) user gets the default repo.
-  // P2 will let the client pass `?repoId=` and check `repoShares`.
-  const requested = req.query.get('repoId');
-  const repoId = requested && /^[a-z0-9_]+__[a-z0-9_-]+$/i.test(requested)
-    ? requested
-    : DEFAULT_REPO_ID;
+
   return {
     principal,
-    userId: principal.userDetails.toLowerCase(),
+    userId,
     repoId,
-    ownerLogin: repoId.split('__', 2)[0],
+    ownerLogin,
+    role: access.role,
+    repo: access.repo,
   };
 }
 
@@ -119,5 +162,21 @@ export function isHttpResponse(
   r: ResolvedRequest | HttpResponseInit,
 ): r is HttpResponseInit {
   return !('principal' in r);
+}
+
+/**
+ * Convenience for routes that require owner role (catalog writes, admin).
+ * Returns the ResolvedRequest if owner, else a 403 short-circuit.
+ */
+export function requireOwner(
+  r: ResolvedRequest,
+): ResolvedRequest | HttpResponseInit {
+  if (r.role !== 'owner') {
+    return {
+      status: 403,
+      jsonBody: { error: 'Owner-only action' },
+    };
+  }
+  return r;
 }
 

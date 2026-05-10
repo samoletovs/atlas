@@ -17,7 +17,7 @@ export async function getLesson(
   req: HttpRequest,
   ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
-  const r = resolveRequest(req);
+  const r = await resolveRequest(req);
   if (isHttpResponse(r)) return r;
   const { userId, repoId } = r;
 
