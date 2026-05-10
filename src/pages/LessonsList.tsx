@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Lesson, listLessons } from '../lib/api';
-import { useLang } from '../App';
+import { useLang, useRepo } from '../App';
 
 interface Props {
   status: string;
@@ -9,6 +9,7 @@ interface Props {
 
 export function LessonsList({ status }: Props) {
   const { lang } = useLang();
+  const { repoId } = useRepo();
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [queued, setQueued] = useState<Lesson[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -16,19 +17,19 @@ export function LessonsList({ status }: Props) {
   useEffect(() => {
     setLessons(null);
     setError(null);
-    listLessons(status, lang)
+    listLessons(status, lang, repoId)
       .then(setLessons)
       .catch((e: Error) => setError(e.message));
 
     // Only show "Coming soon" on the main "Next up" view.
     if (status === 'published') {
-      listLessons('queued', lang)
+      listLessons('queued', lang, repoId)
         .then(setQueued)
         .catch(() => setQueued([]));
     } else {
       setQueued([]);
     }
-  }, [status, lang]);
+  }, [status, lang, repoId]);
 
   if (error) return <div className="error">Couldn’t load lessons: {error}</div>;
   if (!lessons) return <div className="loading">Loading…</div>;

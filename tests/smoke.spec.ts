@@ -3,7 +3,7 @@
  *
  * Coverage:
  *   - Home loads, sign-in screen renders
- *   - Click "Sign in with Microsoft" actually redirects to Microsoft login
+ *   - Click "Sign in with GitHub" actually redirects to GitHub OAuth
  *   - .auth/me endpoint responds with JSON
  *   - /api/lessons returns 302 redirect to login when unauthenticated
  *
@@ -17,7 +17,7 @@ const BASE = process.env.ATLAS_BASE_URL ?? 'https://atlas.naurolabs.com';
 
 async function getLoginRedirectChain(page: Page) {
   const chain: string[] = [];
-  let nextUrl = `${BASE}/.auth/login/aad?post_login_redirect_uri=/`;
+  let nextUrl = `${BASE}/.auth/login/github?post_login_redirect_uri=/`;
 
   for (let hop = 0; hop < 5; hop += 1) {
     const resp = await page.request.get(nextUrl, { maxRedirects: 0 });
@@ -29,7 +29,7 @@ async function getLoginRedirectChain(page: Page) {
     nextUrl = new URL(location, nextUrl).toString();
     chain.push(nextUrl);
 
-    if (nextUrl.includes('login.microsoftonline.com')) {
+    if (nextUrl.includes('github.com/login')) {
       break;
     }
   }
@@ -58,29 +58,29 @@ test.describe('atlas smoke', () => {
     await expect(page.getByRole('heading', { name: 'atlas' })).toBeVisible({
       timeout: 10000,
     });
-    await expect(page.getByRole('link', { name: /sign in with microsoft/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /sign in with github/i })).toBeVisible();
   });
 
-  test('clicking sign-in redirects to Microsoft login (regression: SW must not intercept /.auth/*)', async ({
+  test('clicking sign-in redirects to GitHub login (regression: SW must not intercept /.auth/*)', async ({
     page,
   }) => {
     await page.goto(BASE);
-    await page.waitForSelector('a[href*=".auth/login/aad"]', { timeout: 15000 });
+    await page.waitForSelector('a[href*=".auth/login/github"]', { timeout: 15000 });
 
-    // Click and wait for the cross-origin Microsoft login URL.
+    // Click and wait for the cross-origin GitHub login URL.
     await Promise.all([
-      page.waitForURL(/login\.microsoftonline\.com/, { timeout: 30000 }),
-      page.click('a[href*=".auth/login/aad"]'),
+      page.waitForURL(/github\.com\/login/, { timeout: 30000 }),
+      page.click('a[href*=".auth/login/github"]'),
     ]);
 
-    expect(page.url()).toMatch(/login\.microsoftonline\.com/);
+    expect(page.url()).toMatch(/github\.com\/login/);
   });
 
-  test('/.auth/login/aad ultimately redirects to Microsoft login', async ({
+  test('/.auth/login/github ultimately redirects to GitHub login', async ({
     page,
   }) => {
     const chain = await getLoginRedirectChain(page);
-    expect(chain.join('\n')).toContain('login.microsoftonline.com');
+    expect(chain.join('\n')).toContain('github.com/login');
   });
 
   test('/.auth/me responds with JSON (anonymous = clientPrincipal: null)', async ({ page }) => {
@@ -90,14 +90,23 @@ test.describe('atlas smoke', () => {
     expect(body).toHaveProperty('clientPrincipal');
   });
 
-  test('/.auth/login/aad returns 302 to identity service', async ({
+  test('/.auth/login/github returns 302 to identity service', async ({
     page,
   }) => {
-    const resp = await page.request.get(`${BASE}/.auth/login/aad`, { maxRedirects: 0 });
+    const resp = await page.request.get(`${BASE}/.auth/login/github`, { maxRedirects: 0 });
     // SWA returns 302 Found — body should NOT be HTML
     expect([301, 302, 303, 307]).toContain(resp.status());
     const location = resp.headers()['location'];
-    expect(location).toMatch(/identity\.\d+\.azurestaticapps\.net|login\.microsoftonline\.com/);
+    expect(location).toMatch(/identity\.\d+\.azurestaticapps\.net|github\.com/);
+  });
+
+  test('/.auth/login/aad returns 404 (regression: AAD provider explicitly disabled)', async ({
+    page,
+  }) => {
+    // After the AAD → GitHub swap, /.auth/login/aad should be blocked
+    // by a responseOverride so users can't accidentally hit the old route.
+    const resp = await page.request.get(`${BASE}/.auth/login/aad`, { maxRedirects: 0 });
+    expect(resp.status()).toBe(404);
   });
 
   test('/.auth/login/done does NOT return 404 (regression: post-login redirect must work)', async ({
@@ -140,3 +149,4 @@ test.describe('atlas smoke', () => {
     expect(resp.headers()['content-type']).toMatch(/manifest|json/);
   });
 });
+

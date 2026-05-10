@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { LessonsList } from './pages/LessonsList';
 import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
-import { fetchUser } from './lib/api';
+import { fetchUser, fetchMe, AllowedRepo, AtlasMe, ClientPrincipal } from './lib/api';
 
 type Lang = 'en' | 'ru';
 const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({
@@ -12,6 +12,20 @@ const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({
 });
 export function useLang() {
   return useContext(LangContext);
+}
+
+interface RepoContextValue {
+  repoId: string;
+  setRepoId: (r: string) => void;
+  allowedRepos: AllowedRepo[];
+}
+const RepoContext = createContext<RepoContextValue>({
+  repoId: 'samoletovs__nauroLabs',
+  setRepoId: () => {},
+  allowedRepos: [],
+});
+export function useRepo() {
+  return useContext(RepoContext);
 }
 
 function LangToggle() {
@@ -24,6 +38,33 @@ function LangToggle() {
     >
       {lang === 'en' ? 'RU' : 'EN'}
     </button>
+  );
+}
+
+function RepoPicker() {
+  const { repoId, setRepoId, allowedRepos } = useRepo();
+  if (allowedRepos.length <= 1) {
+    // Single repo — show its name as a static label so the user knows the scope.
+    const only = allowedRepos[0];
+    return only ? (
+      <span className="repo-picker repo-picker-static" title={only.repoId}>
+        {only.name}
+      </span>
+    ) : null;
+  }
+  return (
+    <select
+      className="repo-picker"
+      value={repoId}
+      onChange={(e) => setRepoId(e.target.value)}
+      title="Switch repo"
+    >
+      {allowedRepos.map((r) => (
+        <option key={r.repoId} value={r.repoId}>
+          {r.ownerId}/{r.name}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -51,70 +92,148 @@ function ThemeToggle() {
   );
 }
 
+function ForbiddenScreen({ login }: { login: string }) {
+  return (
+    <div className="signin">
+      <h1>atlas</h1>
+      <p className="muted">
+        atlas is in private beta. Your GitHub account <strong>{login}</strong> isn’t on the
+        access list yet.
+      </p>
+      <p className="muted">
+        Reach out to{' '}
+        <a href="https://github.com/samoletovs" target="_blank" rel="noreferrer">
+          samoletovs
+        </a>{' '}
+        if you’d like to try it.
+      </p>
+      <a className="btn-secondary" href="/.auth/logout">
+        Sign out
+      </a>
+    </div>
+  );
+}
+
+type AppState =
+  | { kind: 'loading' }
+  | { kind: 'anonymous' }
+  | { kind: 'forbidden'; login: string }
+  | { kind: 'ready'; principal: ClientPrincipal; me: AtlasMe };
+
 export function App() {
-  const [user, setUser] = useState<{ userDetails: string } | null | undefined>(undefined);
+  const [state, setState] = useState<AppState>({ kind: 'loading' });
   const [lang, setLang] = useState<Lang>(() => {
     return (localStorage.getItem('atlas-lang') as Lang) || 'en';
   });
+  const [repoId, setRepoId] = useState<string>(() => {
+    return localStorage.getItem('atlas-repo') || 'samoletovs__nauroLabs';
+  });
 
   useEffect(() => {
-    fetchUser().then(setUser);
+    let cancelled = false;
+    (async () => {
+      const principal = await fetchUser();
+      if (cancelled) return;
+      if (!principal) {
+        setState({ kind: 'anonymous' });
+        return;
+      }
+      try {
+        const me = await fetchMe();
+        if (cancelled) return;
+        if (!me) {
+          // Authenticated but not allowlisted (or backend down).
+          setState({
+            kind: 'forbidden',
+            login: principal.userDetails || 'unknown',
+          });
+          return;
+        }
+        // If the persisted repoId isn't in the allowed set, fall back to the first.
+        if (!me.allowedRepos.some((r) => r.repoId === repoId) && me.allowedRepos[0]) {
+          setRepoId(me.allowedRepos[0].repoId);
+        }
+        setState({ kind: 'ready', principal, me });
+      } catch (err) {
+        // Network blip — still show the forbidden screen rather than crash.
+        console.error('fetchMe failed', err);
+        setState({ kind: 'forbidden', login: principal.userDetails || 'unknown' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // We deliberately ignore repoId here; this effect runs once at mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     localStorage.setItem('atlas-lang', lang);
   }, [lang]);
 
-  if (user === undefined) {
+  useEffect(() => {
+    localStorage.setItem('atlas-repo', repoId);
+  }, [repoId]);
+
+  if (state.kind === 'loading') {
     return <div className="loading">Loading…</div>;
   }
 
-  if (user === null) {
+  if (state.kind === 'anonymous') {
     return (
       <div className="signin">
         <h1>atlas</h1>
         <p className="muted">Personal lessons curated from what you build.</p>
-        <a className="btn-primary" href="/.auth/login/aad?post_login_redirect_uri=/">
-          Sign in with Microsoft
+        <a className="btn-primary" href="/.auth/login/github?post_login_redirect_uri=/">
+          Sign in with GitHub
         </a>
       </div>
     );
   }
 
+  if (state.kind === 'forbidden') {
+    return <ForbiddenScreen login={state.login} />;
+  }
+
+  const { principal, me } = state;
+
   return (
     <LangContext.Provider value={{ lang, setLang }}>
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">atlas</div>
-        <nav>
-          <NavLink to="/" end>
-            Next up
-          </NavLink>
-          <NavLink to="/saved">Saved</NavLink>
-          <NavLink to="/read">Read</NavLink>
-          <NavLink to="/about">About</NavLink>
-        </nav>
-        <div className="topbar-right">
-          <span className="user-info" title={user.userDetails}>
-            {user.userDetails}
-          </span>
-          <LangToggle />
-          <ThemeToggle />
-          <a className="signout" href="/.auth/logout">
-            Sign out
-          </a>
+      <RepoContext.Provider value={{ repoId, setRepoId, allowedRepos: me.allowedRepos }}>
+        <div className="app-shell">
+          <header className="topbar">
+            <div className="brand">atlas</div>
+            <nav>
+              <NavLink to="/" end>
+                Next up
+              </NavLink>
+              <NavLink to="/saved">Saved</NavLink>
+              <NavLink to="/read">Read</NavLink>
+              <NavLink to="/about">About</NavLink>
+            </nav>
+            <div className="topbar-right">
+              <RepoPicker />
+              <span className="user-info" title={principal.userDetails}>
+                {principal.userDetails}
+              </span>
+              <LangToggle />
+              <ThemeToggle />
+              <a className="signout" href="/.auth/logout">
+                Sign out
+              </a>
+            </div>
+          </header>
+          <main>
+            <Routes>
+              <Route path="/" element={<LessonsList status="published" />} />
+              <Route path="/saved" element={<LessonsList status="saved" />} />
+              <Route path="/read" element={<LessonsList status="read" />} />
+              <Route path="/lesson/:id" element={<LessonReader />} />
+              <Route path="/about" element={<About />} />
+            </Routes>
+          </main>
         </div>
-      </header>
-      <main>
-        <Routes>
-          <Route path="/" element={<LessonsList status="published" />} />
-          <Route path="/saved" element={<LessonsList status="saved" />} />
-          <Route path="/read" element={<LessonsList status="read" />} />
-          <Route path="/lesson/:id" element={<LessonReader />} />
-          <Route path="/about" element={<About />} />
-        </Routes>
-      </main>
-    </div>
+      </RepoContext.Provider>
     </LangContext.Provider>
   );
 }

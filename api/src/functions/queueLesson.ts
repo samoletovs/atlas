@@ -1,15 +1,15 @@
 /**
- * POST /api/lessons/queue
- * Body: { title, topic, language, rationale?, source_lesson_id? }
+ * POST /api/lessons/queue?repoId=<id>
+ * Body: { title, topic, language, rationale?, source_lesson_id?, depth? }
  *
- * Creates a queued lesson stub in Cosmos. The actual body is generated
- * later by `scripts/generate_lessons.py --pending`. Idempotent — if a
- * queued/published lesson already exists for the same (topic, language),
+ * Creates a queued lesson stub in `lessons_v2`. The body is generated later
+ * by `scripts/generate_lessons.py --pending`. Idempotent — if a queued or
+ * published lesson already exists for the same (repoId, topic, language),
  * returns the existing record.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
-import { lessonsContainer, ATLAS_USER_ID, Lesson } from '../shared/cosmos.js';
-import { getPrincipal, isAuthorized } from '../shared/auth.js';
+import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
+import { resolveRequest, isHttpResponse } from '../shared/auth.js';
 
 interface QueueBody {
   title?: string;
@@ -30,12 +30,11 @@ function slugify(s: string): string {
 
 export async function queueLesson(
   req: HttpRequest,
-  ctx: InvocationContext
+  ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
-  const principal = getPrincipal(req);
-  if (!isAuthorized(principal)) {
-    return { status: 401, jsonBody: { error: 'Unauthorized' } };
-  }
+  const r = resolveRequest(req);
+  if (isHttpResponse(r)) return r;
+  const { repoId, ownerLogin } = r;
 
   let body: QueueBody;
   try {
@@ -56,22 +55,21 @@ export async function queueLesson(
     return { status: 400, jsonBody: { error: 'title/topic too long' } };
   }
 
-  const container = lessonsContainer();
+  const container = lessonsV2Container();
 
-  // Idempotency: if a lesson with same topic+language already exists
-  // (queued OR published), return it instead of creating a duplicate.
+  // Idempotency: same repo + topic + language already queued/published.
   const { resources: existing } = await container.items
-    .query<Lesson>(
+    .query<LessonV2>(
       {
         query:
-          'SELECT * FROM c WHERE c.userId = @uid AND c.topic = @topic AND c.language = @lang AND c.status IN ("queued", "published", "read")',
+          'SELECT * FROM c WHERE c.repoId = @rid AND c.topic = @topic AND c.language = @lang AND c.status IN ("queued", "published")',
         parameters: [
-          { name: '@uid', value: ATLAS_USER_ID },
+          { name: '@rid', value: repoId },
           { name: '@topic', value: topic },
           { name: '@lang', value: language },
         ],
       },
-      { partitionKey: ATLAS_USER_ID },
+      { partitionKey: repoId },
     )
     .fetchAll();
 
@@ -81,9 +79,10 @@ export async function queueLesson(
   }
 
   const slug = slugify(title) || slugify(topic) || 'untitled';
-  const lesson: Lesson = {
+  const lesson: LessonV2 = {
     id: `lesson-${language}-${slug}-${Date.now().toString(36)}`,
-    userId: ATLAS_USER_ID,
+    repoId,
+    ownerId: ownerLogin,
     title,
     topic,
     depth,
@@ -104,7 +103,7 @@ export async function queueLesson(
   };
 
   const { resource } = await container.items.create(lesson);
-  ctx.log(`queueLesson: created ${lesson.id} [${language}] ${topic}`);
+  ctx.log(`queueLesson: created ${lesson.id} [${language}] ${topic} (repo=${repoId})`);
   return { status: 201, jsonBody: resource };
 }
 

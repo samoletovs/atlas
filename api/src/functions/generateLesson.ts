@@ -16,8 +16,8 @@
  * returns the existing record without calling the model.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
-import { lessonsContainer, ATLAS_USER_ID, Lesson } from '../shared/cosmos.js';
-import { getPrincipal, isAuthorized } from '../shared/auth.js';
+import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
+import { resolveRequest, isHttpResponse } from '../shared/auth.js';
 import { getOpenAIClientForUser } from '../shared/openaiClient.js';
 
 interface GenerateBody {
@@ -148,10 +148,9 @@ export async function generateLesson(
   req: HttpRequest,
   ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
-  const principal = getPrincipal(req);
-  if (!isAuthorized(principal)) {
-    return { status: 401, jsonBody: { error: 'Unauthorized' } };
-  }
+  const r = resolveRequest(req);
+  if (isHttpResponse(r)) return r;
+  const { userId, repoId, ownerLogin } = r;
 
   let body: GenerateBody;
   try {
@@ -171,22 +170,21 @@ export async function generateLesson(
     return { status: 400, jsonBody: { error: 'title/topic too long' } };
   }
 
-  const container = lessonsContainer();
+  const container = lessonsV2Container();
 
-  // Idempotency: if a published/read/queued lesson with same (topic, language)
-  // already exists, return it instead of re-generating.
+  // Idempotency: a published lesson with same (repoId, topic, language) wins.
   const { resources: existing } = await container.items
-    .query<Lesson>(
+    .query<LessonV2>(
       {
         query:
-          'SELECT * FROM c WHERE c.userId = @uid AND c.topic = @topic AND c.language = @lang AND c.status IN ("published", "read")',
+          'SELECT * FROM c WHERE c.repoId = @rid AND c.topic = @topic AND c.language = @lang AND c.status = "published"',
         parameters: [
-          { name: '@uid', value: ATLAS_USER_ID },
+          { name: '@rid', value: repoId },
           { name: '@topic', value: topic },
           { name: '@lang', value: language },
         ],
       },
-      { partitionKey: ATLAS_USER_ID },
+      { partitionKey: repoId },
     )
     .fetchAll();
 
@@ -198,7 +196,7 @@ export async function generateLesson(
   // Generate via the model. This is the slow part (5–15s).
   let generated: GeneratedLesson;
   try {
-    generated = await callModel(body, language, ATLAS_USER_ID);
+    generated = await callModel(body, language, userId);
   } catch (err: unknown) {
     ctx.error('generateLesson model call failed', err);
     const message = err instanceof Error ? err.message : String(err);
@@ -206,9 +204,10 @@ export async function generateLesson(
   }
 
   const slug = slugify(generated.title) || slugify(topic) || 'untitled';
-  const lesson: Lesson = {
+  const lesson: LessonV2 = {
     id: `lesson-${language}-${slug}-${Date.now().toString(36)}`,
-    userId: ATLAS_USER_ID,
+    repoId,
+    ownerId: ownerLogin,
     title: generated.title,
     topic: generated.topic || topic,
     depth: generated.depth || body.depth || 'intro',
@@ -229,7 +228,7 @@ export async function generateLesson(
   };
 
   const { resource } = await container.items.create(lesson);
-  ctx.log(`generateLesson: created ${lesson.id} [${language}] ${topic} (${lesson.body.length} chars)`);
+  ctx.log(`generateLesson: created ${lesson.id} [${language}] ${topic} (${lesson.body.length} chars, repo=${repoId})`);
   return { status: 201, jsonBody: resource };
 }
 
