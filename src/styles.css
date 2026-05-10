@@ -188,6 +188,31 @@ body {
   border-color: var(--accent);
 }
 
+.repo-picker {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  line-height: 1;
+  color: var(--fg-muted);
+  font-family: inherit;
+  max-width: 200px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.repo-picker:hover {
+  border-color: var(--fg-muted);
+}
+.repo-picker-static {
+  cursor: default;
+}
+.repo-picker-static:hover {
+  border-color: var(--border);
+}
+
 main {
   padding-top: 1.5rem;
 }

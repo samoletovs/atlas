@@ -9,14 +9,35 @@ export interface ClientPrincipal {
   userRoles: string[];
 }
 
+export interface AllowedRepo {
+  repoId: string;
+  name: string;
+  ownerId: string;
+  githubUrl: string;
+  visibility: 'private' | 'unlisted' | 'public';
+}
+
+export interface AtlasMe {
+  userId: string;
+  githubLogin: string;
+  githubId: number | null;
+  createdAt: string;
+  allowedRepos: AllowedRepo[];
+}
+
 export interface Lesson {
   id: string;
-  userId: string;
+  // P1 v2 schema:
+  repoId?: string;
+  ownerId?: string;
+  // legacy field for compatibility with cached responses:
+  userId?: string;
   title: string;
   topic: string;
   depth: 'intro' | 'intermediate' | 'deep';
   read_minutes: number;
   body: string;
+  body_original?: string;
   citations: string[];
   suggested_next: { title: string; topic: string; rationale: string }[];
   source_event?: { type: string; ref: string; summary: string } | null;
@@ -33,9 +54,9 @@ export async function fetchUser(): Promise<ClientPrincipal | null> {
   // SWA exposes /.auth/me with the current principal (or {clientPrincipal: null})
   if (isLocalDev) {
     return {
-      userId: 'sam',
-      userDetails: 'sam@local',
-      identityProvider: 'local',
+      userId: 'samoletovs-local',
+      userDetails: 'samoletovs',
+      identityProvider: 'github',
       userRoles: ['authenticated'],
     };
   }
@@ -45,28 +66,57 @@ export async function fetchUser(): Promise<ClientPrincipal | null> {
   return data.clientPrincipal;
 }
 
-export async function listLessons(status: string, lang: string = 'en'): Promise<Lesson[]> {
-  const res = await fetch(`/api/lessons?status=${encodeURIComponent(status)}&lang=${encodeURIComponent(lang)}`);
+/**
+ * Backend-resolved view of the current user. Triggers user-doc creation on
+ * first sign-in. Returns null on 401 (not signed in) or 403 (not allowlisted).
+ */
+export async function fetchMe(): Promise<AtlasMe | null> {
+  const res = await fetch('/api/me');
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) throw new Error(`fetchMe failed: ${res.status}`);
+  return (await res.json()) as AtlasMe;
+}
+
+function withRepoId(path: string, repoId?: string): string {
+  if (!repoId) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}repoId=${encodeURIComponent(repoId)}`;
+}
+
+export async function listLessons(
+  status: string,
+  lang: string = 'en',
+  repoId?: string,
+): Promise<Lesson[]> {
+  const url = withRepoId(
+    `/api/lessons?status=${encodeURIComponent(status)}&lang=${encodeURIComponent(lang)}`,
+    repoId,
+  );
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`listLessons failed: ${res.status}`);
   const data = (await res.json()) as { lessons: Lesson[] };
   return data.lessons;
 }
 
-export async function getLesson(id: string): Promise<Lesson> {
-  const res = await fetch(`/api/lessons/${encodeURIComponent(id)}`);
+export async function getLesson(id: string, repoId?: string): Promise<Lesson> {
+  const res = await fetch(withRepoId(`/api/lessons/${encodeURIComponent(id)}`, repoId));
   if (!res.ok) throw new Error(`getLesson failed: ${res.status}`);
   return (await res.json()) as Lesson;
 }
 
 export async function updateLessonState(
   id: string,
-  action: 'mark_read' | 'save' | 'unsave'
+  action: 'mark_read' | 'save' | 'unsave',
+  repoId?: string,
 ): Promise<Lesson> {
-  const res = await fetch(`/api/lessons/${encodeURIComponent(id)}/state`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action }),
-  });
+  const res = await fetch(
+    withRepoId(`/api/lessons/${encodeURIComponent(id)}/state`, repoId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    },
+  );
   if (!res.ok) throw new Error(`updateLessonState failed: ${res.status}`);
   return (await res.json()) as Lesson;
 }
@@ -79,8 +129,8 @@ export interface QueueLessonInput {
   source_lesson_id?: string;
 }
 
-export async function queueLesson(input: QueueLessonInput): Promise<Lesson> {
-  const res = await fetch('/api/lessons/queue', {
+export async function queueLesson(input: QueueLessonInput, repoId?: string): Promise<Lesson> {
+  const res = await fetch(withRepoId('/api/lessons/queue', repoId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -93,8 +143,11 @@ export async function queueLesson(input: QueueLessonInput): Promise<Lesson> {
  * Synchronously generate a lesson body via Azure OpenAI. Takes 5–15s.
  * Returns a fully populated, published lesson.
  */
-export async function generateLessonNow(input: QueueLessonInput): Promise<Lesson> {
-  const res = await fetch('/api/lessons/generate', {
+export async function generateLessonNow(
+  input: QueueLessonInput,
+  repoId?: string,
+): Promise<Lesson> {
+  const res = await fetch(withRepoId('/api/lessons/generate', repoId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),

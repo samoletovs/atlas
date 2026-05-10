@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Lesson, getLesson, listLessons, generateLessonNow, updateLessonState } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
-import { useLang } from '../App';
+import { useLang, useRepo } from '../App';
 
 type SuggestionState =
   | { kind: 'idle' }
@@ -21,6 +21,7 @@ export function LessonReader() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { lang } = useLang();
+  const { repoId } = useRepo();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [library, setLibrary] = useState<Lesson[]>([]);
@@ -30,20 +31,20 @@ export function LessonReader() {
     if (!id) return;
     setLesson(null);
     setSuggestionStates({});
-    getLesson(id)
+    getLesson(id, repoId)
       .then(setLesson)
       .catch((e: Error) => setError(e.message));
-  }, [id]);
+  }, [id, repoId]);
 
   // Fetch library (in current language) for cross-linking suggested_next.
   // Use 'all' so already-read lessons are still linkable.
   useEffect(() => {
     if (!lesson) return;
     const lessonLang = lesson.language ?? lang;
-    listLessons('all', lessonLang)
+    listLessons('all', lessonLang, repoId)
       .then(setLibrary)
       .catch(() => setLibrary([]));
-  }, [lesson, lang]);
+  }, [lesson, lang, repoId]);
 
   const topicIndex = useMemo(() => {
     const map = new Map<string, Lesson>();
@@ -111,7 +112,7 @@ export function LessonReader() {
         language: lesson.language ?? lang,
         rationale: `Cross-link from "${lesson.title}"`,
         source_lesson_id: lesson.id,
-      })
+      }, repoId)
         .then((generated) => navigate(`/lesson/${generated.id}`))
         .catch((err) => {
           btn.disabled = false;
@@ -126,7 +127,7 @@ export function LessonReader() {
 
   async function handleMarkRead() {
     if (!lesson) return;
-    await updateLessonState(lesson.id, 'mark_read');
+    await updateLessonState(lesson.id, 'mark_read', repoId);
     navigate('/');
   }
 
@@ -134,7 +135,8 @@ export function LessonReader() {
     if (!lesson) return;
     const updated = await updateLessonState(
       lesson.id,
-      lesson.saved ? 'unsave' : 'save'
+      lesson.saved ? 'unsave' : 'save',
+      repoId
     );
     setLesson(updated);
   }
@@ -149,7 +151,7 @@ export function LessonReader() {
         language: lesson.language ?? lang,
         rationale: suggestion.rationale,
         source_lesson_id: lesson.id,
-      });
+      }, repoId);
       // Navigate straight to the new lesson — the body is already populated.
       navigate(`/lesson/${generated.id}`);
     } catch (e) {
