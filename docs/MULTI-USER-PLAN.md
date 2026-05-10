@@ -148,7 +148,7 @@ Sam invites people by GitHub handle. They sign in with GitHub, see the `nauroLab
 
 ---
 
-## P3 — Add-your-own-repo (2–3 days)
+## P3 — Add-your-own-repo (2–3 days) — ✅ shipped 2026-05-10
 
 ### Goal
 Any signed-in user (no role required for this) can paste a GitHub URL, atlas ingests it, generates a starter set of lessons in a new repo namespace owned by them.
@@ -165,6 +165,20 @@ Any signed-in user (no role required for this) can paste a GitHub URL, atlas ing
 - Generation cap displayed in user settings: "5/day on free. [Add your own AI key →]"
 - Reading is uncapped (cheap).
 - This is the feature that gets people to BYOK.
+
+### What shipped (delta)
+
+- `api/src/shared/github.ts` — parse GitHub URLs (https / ssh / .git suffix), `fetchRepoMetadata` / `fetchReadme` / `fetchTree` / `fetchRecentCommits`. Reads `x-ms-token-github-access-token` if SWA exposes it (currently does not on Free tier with the shared OAuth app — public repos only for now; private requires Standard or P4 PAT).
+- `api/src/shared/quota.ts` — `checkQuota(userId)` queries `lessons_v2` for today's `ownerId == userId` count. Defaults: cap = 5/day from `ATLAS_DAILY_GENERATION_CAP`; allowlist = `ATLAS_UNCAPPED_USERS` (default `samoletovs`).
+- `POST /api/repos` (`addRepo.ts`) — auth-only, validates URL, fetches GitHub metadata, upserts `repos` doc owned by caller (`visibility: 'private'`, the caller is owner regardless of upstream), seeds one queued "Welcome" lesson from README. 409 if the namespace is already taken by someone else; idempotent re-add for the same owner.
+- `generateLesson.ts` — calls `checkQuota` after `requireOwner`; returns `429 { error, quota }` when over cap. Sam stays uncapped.
+- `getMe.ts` — returns `quota: { used, limit, remaining, resetAt }`. `limit: null` means uncapped.
+- Frontend: `/repos/new` page + topbar `+ Add repo` link visible to every signed-in user. Quota badge in topbar (e.g. `3/5`, gold at ≤1 remaining, red at 0). New `MeContext` exposes quota + `refreshMe()` for AddRepo to update App state after creation. Empty `allowedRepos` is no longer "forbidden"; a brand-new user lands on a `NoRepoLanding` empty state with a CTA to add their first repo.
+- Smoke test: `/api/repos` POST without auth → 302/401 (regression guard).
+
+### Known limit on Free tier
+
+Private GitHub repos are not supported until either (a) we move to SWA Standard with our own GitHub OAuth app that exposes `x-ms-token-github-access-token`, or (b) P4 lands a per-user PAT field. Public repos work today.
 
 ---
 
