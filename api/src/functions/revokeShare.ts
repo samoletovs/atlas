@@ -1,5 +1,5 @@
 /**
- * DELETE /api/admin/shares/{githubLogin}?repoId=<repoId>
+ * DELETE /api/shares/{githubLogin}?repoId=<repoId>
  *
  * Owner-only. Soft-revokes a share by setting `revokedAt = now`. We don't
  * hard-delete so the audit trail (who invited whom, when) is preserved.
@@ -60,6 +60,6 @@ export async function revokeShare(
 app.http('revokeShare', {
   methods: ['DELETE'],
   authLevel: 'anonymous',
-  route: 'admin/shares/{githubLogin}',
+  route: 'shares/{githubLogin}',
   handler: revokeShare,
 });
