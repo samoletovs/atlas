@@ -21,6 +21,7 @@ export interface Lesson {
   suggested_next: { title: string; topic: string; rationale: string }[];
   source_event?: { type: string; ref: string; summary: string } | null;
   status: 'queued' | 'drafting' | 'published' | 'read' | 'archived';
+  language: 'en' | 'ru';
   created_at: string;
   read_at?: string | null;
   saved?: boolean;
@@ -44,8 +45,8 @@ export async function fetchUser(): Promise<ClientPrincipal | null> {
   return data.clientPrincipal;
 }
 
-export async function listLessons(status: string): Promise<Lesson[]> {
-  const res = await fetch(`/api/lessons?status=${encodeURIComponent(status)}`);
+export async function listLessons(status: string, lang: string = 'en'): Promise<Lesson[]> {
+  const res = await fetch(`/api/lessons?status=${encodeURIComponent(status)}&lang=${encodeURIComponent(lang)}`);
   if (!res.ok) throw new Error(`listLessons failed: ${res.status}`);
   const data = (await res.json()) as { lessons: Lesson[] };
   return data.lessons;

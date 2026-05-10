@@ -57,6 +57,7 @@ export interface Lesson {
   suggested_next: { title: string; topic: string; rationale: string }[];
   source_event?: { type: string; ref: string; summary: string } | null;
   status: LessonStatus;
+  language: 'en' | 'ru';
   created_at: string;
   read_at?: string | null;
   saved?: boolean;

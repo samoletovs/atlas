@@ -69,6 +69,7 @@ class Lesson:
     source_event: dict[str, Any] | None
     created_at: str
     user_id: str
+    language: str = "en"
     status: str = "published"
 
     def to_dict(self) -> dict:
@@ -84,6 +85,7 @@ class Lesson:
             "source_event": self.source_event,
             "created_at": self.created_at,
             "userId": self.user_id,
+            "language": self.language,
             "status": self.status,
         }
 
@@ -225,12 +227,12 @@ def upsert_lesson(cosmos: CosmosClient, lesson: Lesson) -> None:
 def existing_lesson_topics(cosmos: CosmosClient) -> set[str]:
     container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
     items = container.query_items(
-        query="SELECT c.topic, c.depth FROM c WHERE c.userId = @uid",
+        query="SELECT c.topic, c.depth, c.language FROM c WHERE c.userId = @uid",
         parameters=[{"name": "@uid", "value": USER_ID}],
         enable_cross_partition_query=False,
         partition_key=USER_ID,
     )
-    return {f"{i['topic']}:{i['depth']}" for i in items}
+    return {f"{i['topic']}:{i['depth']}:{i.get('language', 'en')}" for i in items}
 
 
 # --- Seed lessons (foundryLab) ----------------------------------------------
@@ -249,8 +251,7 @@ SEED_BACKLOG: list[dict[str, Any]] = [
             "Foundry agent = (model + instructions + tools + memory). Six lines of Python "
             "create a working agent (model, name, instructions, tools, tool_resources, "
             "temperature). Threads hold conversation; runs execute the agent against a thread. "
-            "Tools include file_search, code_interpreter, function calling, web. The reader "
-            "is new to agents; emphasize that 'agent' is configuration, not code."
+            "Tools include file_search, code_interpreter, function calling, web."
         ),
     },
     {
@@ -263,12 +264,8 @@ SEED_BACKLOG: list[dict[str, Any]] = [
             "summary": "Set temperature=0.2 in provision.py; eliminated stochastic answers",
         },
         "context_notes": (
-            "Default Foundry agent temperature is ~1.0 — chatty, stochastic, same question "
-            "gives different answers on retries. Setting temperature=0.2 fixed it: same "
-            "answer to same question, citation accuracy +9 percentage points. For grounded-fact "
-            "agents (RAG, librarians, copilots over docs), 0.2 is the right default. Use "
-            "0.7+ only for creative tasks. Why: temperature controls how randomly the model "
-            "samples next tokens; low values pin it to its top guess, high values explore."
+            "Default Foundry agent temperature is ~1.0 — chatty, stochastic. Setting "
+            "temperature=0.2 fixed it: same answer to same question, citation accuracy +9pp."
         ),
     },
     {
@@ -281,13 +278,9 @@ SEED_BACKLOG: list[dict[str, Any]] = [
             "summary": "Switched region from northeurope to swedencentral",
         },
         "context_notes": (
-            "Northeurope ONLY offers GlobalProvisionedManaged SKU for Azure OpenAI on the "
-            "Visual Studio Enterprise sub — that requires committing to monthly capacity, "
-            "expensive even idle. Worse, no embedding models available. Sweden Central has the "
-            "full consumption SKU range (Standard, GlobalStandard) AND text-embedding-3-large, "
-            "DALL-E 3, realtime preview, all reasoning models. Sub-level region availability "
-            "varies; always run `az cognitiveservices model list --location <region>` BEFORE "
-            "committing in Bicep. Region matters more for AOAI workloads than for normal Azure."
+            "Northeurope ONLY offers GlobalProvisionedManaged SKU for Azure OpenAI — "
+            "that requires committing to monthly capacity. Sweden Central has full "
+            "consumption SKU range AND text-embedding-3-large, all reasoning models."
         ),
     },
     {
@@ -300,13 +293,9 @@ SEED_BACKLOG: list[dict[str, Any]] = [
             "summary": "Comparison matrix from foundryLab build",
         },
         "context_notes": (
-            "Foundry: pro-developer, SDK + portal, pay-per-token, idle cost €0, built-in evals + "
-            "RAG. Best for specialized API-consumed agents. Copilot Studio: low-code, business "
-            "user-friendly, lives inside M365 (Teams, Outlook), per-message billing or seats. "
-            "Custom Azure Functions + AOAI: total control, weird requirements, but you build "
-            "everything yourself. Decision rule: M365-native conversational? → Copilot Studio. "
-            "Specialized agent with evals/RAG? → Foundry. Special compliance/control? → custom. "
-            "Common pattern: Copilot Studio front-end, Foundry agent as a tool for hard work."
+            "Foundry: pro-developer, SDK + portal, pay-per-token, idle cost €0. "
+            "Copilot Studio: low-code, M365-native, per-message billing. "
+            "Custom Azure: total control but you build everything."
         ),
     },
     {
@@ -319,12 +308,250 @@ SEED_BACKLOG: list[dict[str, Any]] = [
             "summary": "Idle Foundry billing observation",
         },
         "context_notes": (
-            "GlobalStandard SKU = pay-per-token, no commitment. Capacity (e.g. 200K TPM) is a "
-            "per-minute rate ceiling, NOT a monthly commitment. Provisioned SKUs reserve "
-            "throughput — you pay even idle. Consumption (Standard, GlobalStandard) only bills "
-            "tokens used. Implication for customer pilots: idle Foundry = €0/mo. Quote a capped "
-            "per-query budget, not a fixed monthly fee. This reframes most POC conversations. "
-            "Compare: M365 Copilot at €30/user/mo (seat-based) vs Foundry at €0.005 per query."
+            "GlobalStandard SKU = pay-per-token, no commitment. Consumption only bills "
+            "tokens used. Implication: idle Foundry = €0/mo."
+        ),
+    },
+    # --- New topics from NauroLabs build activity ---
+    {
+        "topic": "azure/swa/authentication",
+        "depth": "intro",
+        "title": "SWA authentication: what's free and what costs €8/month",
+        "source_event": {
+            "type": "debugging",
+            "ref": "samoletovs/atlas/staticwebapp.config.json",
+            "summary": "Discovered Google auth requires Standard tier on new SWA gen .7",
+        },
+        "context_notes": (
+            "SWA Free tier preconfigured providers: only Microsoft Entra ID and GitHub. "
+            "Google was removed from newer SWA generations (.7+). Custom auth (Google, "
+            "Apple, OIDC) requires Standard plan ~€8/month. Older SWAs (.1, .2) are "
+            "grandfathered with Google. Always verify redirect chain ends at the right provider."
+        ),
+    },
+    {
+        "topic": "azure/swa/managed-functions",
+        "depth": "intro",
+        "title": "How SWA managed Functions work (and their limits)",
+        "source_event": {
+            "type": "build",
+            "ref": "samoletovs/atlas/api",
+            "summary": "Built atlas API as SWA managed Functions with Cosmos DB backend",
+        },
+        "context_notes": (
+            "SWA managed Functions: put your code in /api folder, SWA deploys it automatically. "
+            "No cold start for static, but Functions may cold-start. Free tier: no managed "
+            "identity, no Key Vault references. App Settings only for secrets. ESM modules "
+            "need module:'node16' in tsconfig for proper SWA compatibility."
+        ),
+    },
+    {
+        "topic": "web/react/component-patterns",
+        "depth": "intro",
+        "title": "React patterns that keep NauroLabs apps simple",
+        "source_event": {
+            "type": "observation",
+            "ref": "samoletovs/golazo, rosette, tPlan, atlas",
+            "summary": "Common patterns across 8 React apps in the lab",
+        },
+        "context_notes": (
+            "useState+useEffect for data fetching (no library needed for simple apps). "
+            "React.lazy + Suspense for code splitting. Context for theme/lang/auth state. "
+            "NavLink for active-state navigation. CSS variables for theming instead of "
+            "CSS-in-JS. Keep components < 100 lines. No Redux — useState is enough for "
+            "single-user apps."
+        ),
+    },
+    {
+        "topic": "web/vite/build-optimization",
+        "depth": "intro",
+        "title": "Why your Vite bundle is 1.5MB and how to fix it",
+        "source_event": {
+            "type": "fix",
+            "ref": "samoletovs/golazo, rosette, portaBaltica",
+            "summary": "Bundle size optimization across 3 NauroLabs projects",
+        },
+        "context_notes": (
+            "Default Vite config produces one giant chunk. Fix: add manualChunks in "
+            "vite.config.ts to split react, charts (recharts/d3), i18n, PDF libs into "
+            "separate chunks. Use React.lazy for routes not needed on first paint. "
+            "golazo went from 1.1MB→824KB index, rosette from 770KB→207KB."
+        ),
+    },
+    {
+        "topic": "azure/cosmos/serverless-patterns",
+        "depth": "intro",
+        "title": "Cosmos DB serverless: the €0/month database for experiments",
+        "source_event": {
+            "type": "build",
+            "ref": "samoletovs/atlas, golazo, era",
+            "summary": "Three NauroLabs apps use Cosmos DB serverless",
+        },
+        "context_notes": (
+            "Cosmos DB serverless: pay-per-request, no provisioned throughput, no idle cost. "
+            "Partition key by userId. Session consistency (not strong — cheaper). "
+            "Connection string auth on SWA Free (no MI available). Always use parameterized "
+            "queries, never string concatenation. 7-day continuous backup by default."
+        ),
+    },
+    {
+        "topic": "devops/github-actions/swa-deploy",
+        "depth": "intro",
+        "title": "Ship to production with one git push",
+        "source_event": {
+            "type": "build",
+            "ref": "samoletovs/atlas/.github/workflows/azure-static-web-apps.yml",
+            "summary": "GitHub Actions CI/CD for atlas deploys on every push to main",
+        },
+        "context_notes": (
+            "Azure/static-web-apps-deploy@v1 handles build + deploy in one step. "
+            "app_location='/', api_location='api', output_location='dist'. "
+            "SWA token stored as GitHub secret. Add Playwright smoke tests as a post-deploy "
+            "step. Telegram notifications on success/failure."
+        ),
+    },
+    {
+        "topic": "azure/identity/managed-identity",
+        "depth": "intro",
+        "title": "DefaultAzureCredential: one line that replaces all API keys",
+        "source_event": {
+            "type": "pattern",
+            "ref": "samoletovs/foundryLab, agentMode, atlas",
+            "summary": "Managed Identity pattern used across NauroLabs Python + Node projects",
+        },
+        "context_notes": (
+            "DefaultAzureCredential tries: environment vars → MI → az login → VS Code. "
+            "Works in production (MI) and locally (az login). No API keys to rotate or leak. "
+            "disableLocalAuth=true on Foundry account = keys blocked by construction. "
+            "Cross-resource-group access via role assignment."
+        ),
+    },
+    {
+        "topic": "web/pwa/offline-first",
+        "depth": "intro",
+        "title": "Making a web app work offline with service workers",
+        "source_event": {
+            "type": "build",
+            "ref": "samoletovs/atlas",
+            "summary": "atlas is a PWA with offline reading via vite-plugin-pwa",
+        },
+        "context_notes": (
+            "vite-plugin-pwa generates a service worker automatically. registerSW.js handles "
+            "cache updates. manifest.webmanifest defines the installable app. Key lesson: "
+            "service workers can intercept /.auth/* routes and break login — exclude auth "
+            "paths from the SW's navigation fallback."
+        ),
+    },
+    {
+        "topic": "ai/prompt-engineering/structured-output",
+        "depth": "intro",
+        "title": "Getting JSON from an LLM without praying",
+        "source_event": {
+            "type": "pattern",
+            "ref": "samoletovs/atlas/scripts/generate_lessons.py",
+            "summary": "atlas lesson generator extracts structured JSON from GPT-4o-mini",
+        },
+        "context_notes": (
+            "Tell the model 'Output ONLY the JSON. No prose. No markdown fences.' "
+            "Still strip code fences anyway (regex: ^```json\\n and \\n```$). "
+            "Use temperature 0.2-0.4 for structured output. Parse with json.loads, "
+            "catch exceptions and retry once. Define the exact JSON schema in instructions."
+        ),
+    },
+    {
+        "topic": "azure/bicep/resource-naming",
+        "depth": "intro",
+        "title": "Bicep patterns that keep 11 projects consistent",
+        "source_event": {
+            "type": "pattern",
+            "ref": "samoletovs/.github/infrastructure/modules",
+            "summary": "Shared Bicep modules across NauroLabs",
+        },
+        "context_notes": (
+            "targetScope='resourceGroup'. Resource naming: {flatcase}-{type} (atlas-swa, "
+            "atlas-cosmos). Tags: {project, managedBy:'bicep', costCenter:'naurolabs-research'}. "
+            "Shared modules: swa.bicep, monitoring.bicep. uniqueString for globally unique names. "
+            "Region: northeurope default, swedencentral for AI workloads."
+        ),
+    },
+    {
+        "topic": "web/css/theming-with-variables",
+        "depth": "intro",
+        "title": "Dark and light mode with zero JavaScript (almost)",
+        "source_event": {
+            "type": "build",
+            "ref": "samoletovs/atlas/src/styles.css",
+            "summary": "atlas theme system using CSS custom properties",
+        },
+        "context_notes": (
+            "Define colors as CSS custom properties in :root (dark) and [data-theme='light']. "
+            "One line of JS sets the data-theme attribute. localStorage remembers the choice. "
+            "prefers-color-scheme media query for OS default. No Tailwind needed for small apps. "
+            "Keep the palette to ~10 variables: bg, bg-card, fg, fg-muted, accent, link, error."
+        ),
+    },
+    {
+        "topic": "security/api/input-validation",
+        "depth": "intro",
+        "title": "Every API boundary needs a gatekeeper",
+        "source_event": {
+            "type": "pattern",
+            "ref": "samoletovs/era, rosette, atlas",
+            "summary": "Input validation patterns across NauroLabs APIs",
+        },
+        "context_notes": (
+            "zod (Node) or pydantic (Python) at every API boundary. Never trust req.body. "
+            "SWA x-ms-client-principal header for auth — decode from base64, parse JSON. "
+            "Parameterized Cosmos queries, never string concatenation. Error codes by "
+            "category (VAL-*, BIZ-*, FIN-* in ERA). Return proper HTTP status codes."
+        ),
+    },
+    {
+        "topic": "career/d365-to-azure/learning-path",
+        "depth": "intro",
+        "title": "From D365 functional to Azure builder: what transfers and what doesn't",
+        "source_event": {
+            "type": "reflection",
+            "ref": "samoletovs/naurolabs",
+            "summary": "NauroLabs exists because a D365 consultant started building with AI",
+        },
+        "context_notes": (
+            "What transfers: business process thinking, data modeling, integration patterns, "
+            "understanding enterprise customers. What doesn't: frontend development (React), "
+            "CI/CD, cloud infrastructure (Bicep/ARM), LLM prompt engineering. The gap is "
+            "narrowing because AI copilots handle the syntax — you supply the 'why'."
+        ),
+    },
+    {
+        "topic": "ai/agents/multi-agent-coordination",
+        "depth": "intermediate",
+        "title": "Running 4 AI agents as a team: what we learned",
+        "source_event": {
+            "type": "observation",
+            "ref": "samoletovs/.github/skills/nauro-run",
+            "summary": "NauroLabs 4-agent system (plan, ops, build, run) manages the lab",
+        },
+        "context_notes": (
+            "nauro-plan (strategy), nauro-ops (health), nauro-build (implementation), "
+            "nauro-run (orchestrator). Agents can: scan trends, flag issues, patch deps. "
+            "Agents can't: decide to ship revenue features (flagged 6x, never acted). "
+            "Multi-agent = distributed systems problem: coordination, state, rollback."
+        ),
+    },
+    {
+        "topic": "azure/cost/budget-alerts",
+        "depth": "intro",
+        "title": "Azure budget alerts: €5/project keeps experiments alive",
+        "source_event": {
+            "type": "pattern",
+            "ref": "samoletovs/.github/PLATFORM.md",
+            "summary": "NauroLabs budget discipline for 11 research projects",
+        },
+        "context_notes": (
+            "€5/month budget per resource group. 80% warning, 100% alert. Biggest spenders: "
+            "PostgreSQL (turgo ~€15/mo), Container Apps. SWA Free = €0. Cosmos serverless = "
+            "€0 idle. App Insights daily cap 0.1GB. Total lab spend ~€50/month on VS Enterprise "
+            "credits. Cost discipline is what lets you run 11 experiments at once."
         ),
     },
 ]
@@ -332,58 +559,76 @@ SEED_BACKLOG: list[dict[str, Any]] = [
 
 # --- Main -------------------------------------------------------------------
 
-def run_seed() -> None:
-    log.info("Mode: SEED — generating %d day-1 lessons", len(SEED_BACKLOG))
+def run_seed(languages: list[str] | None = None) -> None:
+    if languages is None:
+        languages = ["en"]
+    log.info("Mode: SEED — generating %d topics × %d language(s)", len(SEED_BACKLOG), len(languages))
     cosmos = get_cosmos_client()
     agents = make_agents_client()
     agent_id = get_or_create_atlas_agent(agents)
     log.info("Agent: %s", agent_id)
 
     existing = existing_lesson_topics(cosmos)
-    log.info("Already covered: %d topic+depth pairs", len(existing))
+    log.info("Already covered: %d topic+depth+lang triples", len(existing))
 
     generated = 0
-    for item in SEED_BACKLOG:
-        key = f"{item['topic']}:{item['depth']}"
-        if key in existing:
-            log.info("  SKIP %s (already covered)", item["topic"])
-            continue
-        if generated > 0:
-            time.sleep(8)  # gentle on TPM
-        log.info("  GEN  %s", item["topic"])
-        try:
-            payload = generate_lesson(agents, agent_id, item)
-        except Exception as exc:  # noqa: BLE001
-            log.error("  FAIL %s: %s", item["topic"], exc)
-            continue
-        # Build a stable id slug
-        slug = re.sub(r"[^a-z0-9]+", "-", payload["title"].lower()).strip("-")[:60]
-        lesson = Lesson(
-            id=f"lesson-{slug}",
-            title=payload["title"],
-            topic=payload["topic"],
-            depth=payload["depth"],
-            read_minutes=int(payload.get("read_minutes", 4)),
-            body=payload["body"],
-            citations=list(payload.get("citations", [])),
-            suggested_next=list(payload.get("suggested_next", [])),
-            source_event=item.get("source_event"),
-            created_at=datetime.now(timezone.utc).isoformat(),
-            user_id=USER_ID,
-        )
-        upsert_lesson(cosmos, lesson)
-        generated += 1
-        log.info("    -> stored '%s' (%d words)", lesson.title, len(lesson.body.split()))
+    for lang in languages:
+        for item in SEED_BACKLOG:
+            key = f"{item['topic']}:{item['depth']}:{lang}"
+            if key in existing:
+                log.info("  SKIP %s [%s] (already covered)", item["topic"], lang)
+                continue
+            if generated > 0:
+                time.sleep(8)  # gentle on TPM
+            log.info("  GEN  %s [%s]", item["topic"], lang)
+
+            # Inject language instruction into context
+            lang_context = item.get("context_notes", "")
+            if lang == "ru":
+                lang_context = (
+                    "IMPORTANT: Write the ENTIRE lesson in Russian (Русский). "
+                    "Title, body, citations labels — everything in Russian. "
+                    "Keep technical terms in English where natural (e.g. Azure, Cosmos DB, API). "
+                    + lang_context
+                )
+
+            item_with_lang = {**item, "context_notes": lang_context}
+            try:
+                payload = generate_lesson(agents, agent_id, item_with_lang)
+            except Exception as exc:  # noqa: BLE001
+                log.error("  FAIL %s [%s]: %s", item["topic"], lang, exc)
+                continue
+
+            slug = re.sub(r"[^a-z0-9]+", "-", payload["title"].lower()).strip("-")[:50]
+            lesson = Lesson(
+                id=f"lesson-{lang}-{slug}",
+                title=payload["title"],
+                topic=payload["topic"],
+                depth=payload["depth"],
+                read_minutes=int(payload.get("read_minutes", 4)),
+                body=payload["body"],
+                citations=list(payload.get("citations", [])),
+                suggested_next=list(payload.get("suggested_next", [])),
+                source_event=item.get("source_event"),
+                created_at=datetime.now(timezone.utc).isoformat(),
+                user_id=USER_ID,
+                language=lang,
+            )
+            upsert_lesson(cosmos, lesson)
+            generated += 1
+            log.info("    -> stored '%s' [%s] (%d words)", lesson.title, lang, len(lesson.body.split()))
 
     log.info("Done. Generated %d new lesson(s).", generated)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", action="store_true", help="generate the 5 day-1 seed lessons")
+    parser.add_argument("--seed", action="store_true", help="generate seed lessons")
+    parser.add_argument("--lang", nargs="+", default=["en", "ru"],
+                        help="languages to generate (default: en ru)")
     args = parser.parse_args()
     if args.seed:
-        run_seed()
+        run_seed(args.lang)
     else:
         log.error("Non-seed mode not yet implemented (Phase 4). Use --seed for now.")
         return 1

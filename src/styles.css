@@ -172,6 +172,22 @@ body {
   border-color: var(--fg-muted);
 }
 
+.lang-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+.lang-toggle:hover {
+  border-color: var(--accent);
+}
+
 main {
   padding-top: 1.5rem;
 }
