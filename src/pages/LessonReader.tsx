@@ -29,23 +29,22 @@ export function LessonReader() {
   }, [id]);
 
   // Fetch library (in current language) for cross-linking suggested_next.
+  // Use 'all' so already-read lessons are still linkable.
   useEffect(() => {
     if (!lesson) return;
     const lessonLang = lesson.language ?? lang;
-    Promise.all([
-      listLessons('published', lessonLang),
-      listLessons('queued', lessonLang),
-    ])
-      .then(([published, queued]) => setLibrary([...published, ...queued]))
+    listLessons('all', lessonLang)
+      .then(setLibrary)
       .catch(() => setLibrary([]));
   }, [lesson, lang]);
 
   const topicIndex = useMemo(() => {
     const map = new Map<string, Lesson>();
     for (const l of library) {
-      // Prefer published over queued when both exist for same topic
+      if (l.status === 'archived' || l.status === 'drafting') continue;
+      // Prefer non-queued (published/read) over queued for the same topic.
       const existing = map.get(l.topic);
-      if (!existing || (existing.status === 'queued' && l.status === 'published')) {
+      if (!existing || (existing.status === 'queued' && l.status !== 'queued')) {
         map.set(l.topic, l);
       }
     }
@@ -143,8 +142,8 @@ export function LessonReader() {
               const match = topicIndex.get(s.topic);
               const state = suggestionStates[i] ?? { kind: 'idle' };
 
-              // 1. Already published — render as link.
-              if (match && match.status === 'published') {
+              // 1. Already exists (published or read) — render as link.
+              if (match && match.status !== 'queued') {
                 return (
                   <li key={i} className="next-item next-item-link">
                     <Link to={`/lesson/${match.id}`} className="next-link">
