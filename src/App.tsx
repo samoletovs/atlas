@@ -232,15 +232,46 @@ export function App() {
     return <ForbiddenScreen login={state.login} />;
   }
 
-  const { principal, me } = state;
+  return (
+    <AuthenticatedShell
+      principal={state.principal}
+      me={state.me}
+      lang={lang}
+      setLang={setLang}
+      repoId={repoId}
+      setRepoId={setRepoId}
+      refreshMe={refreshMe}
+    />
+  );
+}
+
+interface AuthenticatedShellProps {
+  principal: ClientPrincipal;
+  me: AtlasMe;
+  lang: Lang;
+  setLang: (l: Lang) => void;
+  repoId: string;
+  setRepoId: (r: string) => void;
+  refreshMe: () => Promise<AtlasMe | null>;
+}
+
+function AuthenticatedShell({
+  principal,
+  me,
+  lang,
+  setLang,
+  repoId,
+  setRepoId,
+  refreshMe,
+}: AuthenticatedShellProps) {
   const currentRole: AtlasRole | null =
     me.allowedRepos.find((r) => r.repoId === repoId)?.role ?? null;
 
   const repoCtxValue = useMemo<RepoContextValue>(
     () => ({ repoId, setRepoId, allowedRepos: me.allowedRepos, role: currentRole }),
-    [repoId, me.allowedRepos, currentRole],
+    [repoId, setRepoId, me.allowedRepos, currentRole],
   );
-  const langCtxValue = useMemo(() => ({ lang, setLang }), [lang]);
+  const langCtxValue = useMemo(() => ({ lang, setLang }), [lang, setLang]);
   const meCtxValue = useMemo<MeContextValue>(
     () => ({ quota: me.quota, refreshMe }),
     [me.quota, refreshMe],
