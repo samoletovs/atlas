@@ -471,8 +471,20 @@ main {
   color: #c44;
   margin: 0.3rem 0 0;
 }
-
-/* Coming soon (queued) cards on LessonsList */
+.spinner {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.4em;
+  border: 2px solid var(--fg-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: -0.1em;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
 .list-heading-muted {
   color: var(--fg-muted);
   font-size: 0.95rem;
