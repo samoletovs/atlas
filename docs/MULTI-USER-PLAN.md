@@ -37,7 +37,7 @@ P1 is the hard structural change. Everything after it is incremental on the same
 - Switch primary auth to GitHub.
 - Lock atlas down so only `samoletovs` can sign in.
 - Refactor data so every lesson belongs to a `(ownerId, repoId)` pair.
-- Migrate the existing 40 lessons to `ownerId='samoletovs', repoId='nauroLabs'`.
+- Migrate the existing 40 lessons to `ownerId='samoletovs', repoId='samoletovs__nauroLabs'`.
 - Add a repo switcher in the header (with one entry: `nauroLabs`).
 
 ### Auth swap
@@ -95,14 +95,16 @@ In P2 this function reads from Cosmos `repoShares` instead of the hardcoded chec
 
 `userId` = GitHub `node_id` or numeric id (stable). `githubLogin` is the human-readable handle (can change if user renames; we always re-resolve at sign-in).
 
+`repoId` is the canonical string `<ownerLogin>__<repoName>` (e.g. `samoletovs__nauroLabs`). The `__` separator is used because Cosmos document IDs cannot contain `/`. The pretty URL form is `/r/<ownerLogin>/<repoName>/...`, reconstructed by the route handler from two path segments — we never expose the underscored form in URLs.
+
 ### Migration script
 
 A one-shot Python script `atlas/scripts/migrate_to_repo_schema.py` that:
 
 1. Reads all docs from current `lessons` container (partitioned by `/userId`).
-2. Writes them to the new `lessons` container (partitioned by `/repoId`) with `ownerId='samoletovs'`, `repoId='nauroLabs'`.
+2. Writes them to the new `lessons` container (partitioned by `/repoId`) with `ownerId='samoletovs'`, `repoId='samoletovs__nauroLabs'`.
 3. For any doc with a `read: true` field, writes a corresponding `lessonProgress` row.
-4. Inserts a `repos` doc: `{repoId: 'nauroLabs', ownerId: 'samoletovs', githubUrl: 'https://github.com/samoletovs/nauroLabs-github', name: 'nauroLabs', visibility: 'private'}`.
+4. Inserts a `repos` doc: `{id: 'samoletovs__nauroLabs', repoId: 'samoletovs__nauroLabs', ownerId: 'samoletovs', githubUrl: 'https://github.com/samoletovs/nauroLabs-github', name: 'nauroLabs', visibility: 'private'}`.
 5. Inserts a `users` doc for `samoletovs`.
 6. Old container kept for 30 days as backup, then dropped.
 
