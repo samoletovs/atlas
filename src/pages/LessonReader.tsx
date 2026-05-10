@@ -1,21 +1,56 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Lesson, getLesson, updateLessonState } from '../lib/api';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Lesson, getLesson, listLessons, queueLesson, updateLessonState } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
+import { useLang } from '../App';
+
+type SuggestionState =
+  | { kind: 'idle' }
+  | { kind: 'queueing' }
+  | { kind: 'queued'; lesson: Lesson }
+  | { kind: 'error'; message: string };
 
 export function LessonReader() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { lang } = useLang();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [library, setLibrary] = useState<Lesson[]>([]);
+  const [suggestionStates, setSuggestionStates] = useState<Record<number, SuggestionState>>({});
 
   useEffect(() => {
     if (!id) return;
     setLesson(null);
+    setSuggestionStates({});
     getLesson(id)
       .then(setLesson)
       .catch((e: Error) => setError(e.message));
   }, [id]);
+
+  // Fetch library (in current language) for cross-linking suggested_next.
+  useEffect(() => {
+    if (!lesson) return;
+    const lessonLang = lesson.language ?? lang;
+    Promise.all([
+      listLessons('published', lessonLang),
+      listLessons('queued', lessonLang),
+    ])
+      .then(([published, queued]) => setLibrary([...published, ...queued]))
+      .catch(() => setLibrary([]));
+  }, [lesson, lang]);
+
+  const topicIndex = useMemo(() => {
+    const map = new Map<string, Lesson>();
+    for (const l of library) {
+      // Prefer published over queued when both exist for same topic
+      const existing = map.get(l.topic);
+      if (!existing || (existing.status === 'queued' && l.status === 'published')) {
+        map.set(l.topic, l);
+      }
+    }
+    return map;
+  }, [library]);
 
   async function handleMarkRead() {
     if (!lesson) return;
@@ -30,6 +65,27 @@ export function LessonReader() {
       lesson.saved ? 'unsave' : 'save'
     );
     setLesson(updated);
+  }
+
+  async function handleQueue(idx: number, suggestion: Lesson['suggested_next'][number]) {
+    if (!lesson) return;
+    setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'queueing' } }));
+    try {
+      const queued = await queueLesson({
+        title: suggestion.title,
+        topic: suggestion.topic,
+        language: lesson.language ?? lang,
+        rationale: suggestion.rationale,
+        source_lesson_id: lesson.id,
+      });
+      setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'queued', lesson: queued } }));
+      // Add the queued stub to the local library so subsequent suggestions
+      // referencing the same topic resolve to the queued state immediately.
+      setLibrary((lib) => (lib.find((l) => l.id === queued.id) ? lib : [...lib, queued]));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'error', message: msg } }));
+    }
   }
 
   if (error) return <div className="error">Couldn’t load lesson: {error}</div>;
@@ -82,13 +138,59 @@ export function LessonReader() {
       {lesson.suggested_next.length > 0 && (
         <section className="next">
           <h4>What to learn next</h4>
-          <ul>
-            {lesson.suggested_next.map((s, i) => (
-              <li key={i}>
-                <strong>{s.title}</strong>
-                <p className="muted">{s.rationale}</p>
-              </li>
-            ))}
+          <ul className="next-list">
+            {lesson.suggested_next.map((s, i) => {
+              const match = topicIndex.get(s.topic);
+              const state = suggestionStates[i] ?? { kind: 'idle' };
+
+              // 1. Already published — render as link.
+              if (match && match.status === 'published') {
+                return (
+                  <li key={i} className="next-item next-item-link">
+                    <Link to={`/lesson/${match.id}`} className="next-link">
+                      <span className="next-title">{s.title}</span>
+                      <span className="next-arrow" aria-hidden="true">→</span>
+                    </Link>
+                    <p className="muted">{s.rationale}</p>
+                  </li>
+                );
+              }
+
+              // 2. Already queued (either from library or just queued in this session).
+              const isQueued =
+                (match && match.status === 'queued') || state.kind === 'queued';
+              if (isQueued) {
+                return (
+                  <li key={i} className="next-item next-item-queued">
+                    <div className="next-row">
+                      <span className="next-title">{s.title}</span>
+                      <span className="next-badge">Queued ✓</span>
+                    </div>
+                    <p className="muted">{s.rationale}</p>
+                  </li>
+                );
+              }
+
+              // 3. Not in library — offer to queue for generation.
+              return (
+                <li key={i} className="next-item next-item-generate">
+                  <div className="next-row">
+                    <span className="next-title">{s.title}</span>
+                    <button
+                      className="btn-link next-generate"
+                      onClick={() => handleQueue(i, s)}
+                      disabled={state.kind === 'queueing'}
+                    >
+                      {state.kind === 'queueing' ? 'Queueing…' : 'Generate this →'}
+                    </button>
+                  </div>
+                  <p className="muted">{s.rationale}</p>
+                  {state.kind === 'error' && (
+                    <p className="error-inline">Couldn’t queue: {state.message}</p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -104,3 +206,4 @@ export function LessonReader() {
     </article>
   );
 }
+
