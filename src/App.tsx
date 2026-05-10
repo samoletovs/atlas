@@ -1,5 +1,13 @@
 import { Routes, Route, NavLink } from 'react-router-dom';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { LessonsList } from './pages/LessonsList';
 import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
@@ -53,16 +61,99 @@ export function useMe() {
   return useContext(MeContext);
 }
 
-function LangToggle() {
+function useTheme() {
+  const [dark, setDark] = useState(() => {
+    const saved = localStorage.getItem('atlas-theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    localStorage.setItem('atlas-theme', dark ? 'dark' : 'light');
+  }, [dark]);
+
+  return { dark, toggle: () => setDark((d) => !d) };
+}
+
+/**
+ * Profile dropdown — shows the GitHub login as the trigger, opens a menu
+ * with everything that doesn't need to be on the topbar all the time:
+ * Add repo, Admin (owner only), About, language, theme, Sign out.
+ *
+ * Closes on outside click, Escape, or after navigating to a menu item.
+ */
+function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
+  const [open, setOpen] = useState(false);
   const { lang, setLang } = useLang();
+  const { dark, toggle: toggleTheme } = useTheme();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  const close = () => setOpen(false);
+
   return (
-    <button
-      className="lang-toggle"
-      onClick={() => setLang(lang === 'en' ? 'ru' : 'en')}
-      title={lang === 'en' ? 'Переключить на русский' : 'Switch to English'}
-    >
-      {lang === 'en' ? 'RU' : 'EN'}
-    </button>
+    <div className="user-menu" ref={ref}>
+      <button
+        type="button"
+        className="user-menu-trigger"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="user-menu-name">{login}</span>
+        <span className="user-menu-caret" aria-hidden>
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="user-menu-popover" role="menu">
+          <NavLink to="/repos/new" role="menuitem" onClick={close}>
+            + Add repo
+          </NavLink>
+          {isOwner && (
+            <NavLink to="/admin" role="menuitem" onClick={close}>
+              Admin
+            </NavLink>
+          )}
+          <NavLink to="/about" role="menuitem" onClick={close}>
+            About
+          </NavLink>
+          <div className="user-menu-sep" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => setLang(lang === 'en' ? 'ru' : 'en')}
+          >
+            <span>Language</span>
+            <span className="user-menu-value">{lang === 'en' ? 'EN' : 'RU'}</span>
+          </button>
+          <button type="button" role="menuitem" onClick={toggleTheme}>
+            <span>Theme</span>
+            <span className="user-menu-value">{dark ? 'Dark' : 'Light'}</span>
+          </button>
+          <div className="user-menu-sep" />
+          <a role="menuitem" href="/.auth/logout">
+            Sign out
+          </a>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -90,30 +181,6 @@ function RepoPicker() {
         </option>
       ))}
     </select>
-  );
-}
-
-function ThemeToggle() {
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem('atlas-theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    localStorage.setItem('atlas-theme', dark ? 'dark' : 'light');
-  }, [dark]);
-
-  return (
-    <button
-      className="theme-toggle"
-      onClick={() => setDark((d) => !d)}
-      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-      title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-    >
-      {dark ? '☀️' : '🌙'}
-    </button>
   );
 }
 
@@ -234,7 +301,6 @@ export function App() {
 
   return (
     <AuthenticatedShell
-      principal={state.principal}
       me={state.me}
       lang={lang}
       setLang={setLang}
@@ -246,7 +312,6 @@ export function App() {
 }
 
 interface AuthenticatedShellProps {
-  principal: ClientPrincipal;
   me: AtlasMe;
   lang: Lang;
   setLang: (l: Lang) => void;
@@ -256,7 +321,6 @@ interface AuthenticatedShellProps {
 }
 
 function AuthenticatedShell({
-  principal,
   me,
   lang,
   setLang,
@@ -292,23 +356,14 @@ function AuthenticatedShell({
                 </NavLink>
                 <NavLink to="/saved">Saved</NavLink>
                 <NavLink to="/read">Read</NavLink>
-                {currentRole === 'owner' && <NavLink to="/admin">Admin</NavLink>}
-                <NavLink to="/about">About</NavLink>
               </nav>
               <div className="topbar-right">
                 {hasAnyRepo && <RepoPicker />}
-                <NavLink to="/repos/new" className="add-repo-link" title="Add a GitHub repo">
-                  + Add repo
-                </NavLink>
                 <QuotaBadge quota={me.quota} />
-                <span className="user-info" title={principal.userDetails}>
-                  {principal.userDetails}
-                </span>
-                <LangToggle />
-                <ThemeToggle />
-                <a className="signout" href="/.auth/logout">
-                  Sign out
-                </a>
+                <UserMenu
+                  login={me.githubLogin}
+                  isOwner={currentRole === 'owner'}
+                />
               </div>
             </header>
             <main>

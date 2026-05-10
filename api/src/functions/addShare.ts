@@ -1,5 +1,5 @@
 /**
- * POST /api/admin/shares?repoId=<repoId>
+ * POST /api/shares/invite?repoId=<repoId>
  * Body: { githubLogin: string }
  *
  * Owner-only. Upserts a `repoShares` row granting `member` access to the
@@ -11,6 +11,11 @@
  *   - 1-39 chars, alphanumeric or hyphen
  *   - cannot start or end with a hyphen
  *   - no consecutive hyphens
+ *
+ * NOTE: Lives at `/invite` (rather than POST /shares) so it doesn't share
+ * an exact route with listShares' GET — the v4 host doesn't reliably
+ * dispatch by method for SWA managed Functions when two functions register
+ * the same route.
  *
  * Returns 200 with the upserted RepoShare doc.
  */
@@ -90,6 +95,6 @@ export async function addShare(
 app.http('addShare', {
   methods: ['POST'],
   authLevel: 'anonymous',
-  route: 'admin/shares',
+  route: 'shares/invite',
   handler: addShare,
 });

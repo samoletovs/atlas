@@ -1,9 +1,15 @@
 /**
- * GET /api/admin/shares?repoId=<repoId>
+ * GET /api/shares?repoId=<repoId>
  *
  * Owner-only. Returns the list of `repoShares` rows for the given repo,
  * including revoked ones (so the owner can audit). Each row has:
  *   { id, repoId, githubLogin, role, invitedBy, createdAt, revokedAt }
+ *
+ * NOTE: Originally this lived under `/api/admin/shares` but Azure Functions
+ * v4 model couldn't dispatch GET vs POST when listShares and addShare both
+ * registered the exact same route — every request returned 404. We split
+ * the routes by giving addShare its own `/api/shares/invite` path. This
+ * route stays singular and method-unique.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { repoSharesContainer, RepoShare } from '../shared/cosmos.js';
@@ -41,6 +47,6 @@ export async function listShares(
 app.http('listShares', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  route: 'admin/shares',
+  route: 'shares',
   handler: listShares,
 });

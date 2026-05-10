@@ -191,14 +191,14 @@ export interface RepoShare {
 }
 
 export async function listShares(repoId: string): Promise<RepoShare[]> {
-  const res = await fetch(withRepoId('/api/admin/shares', repoId));
+  const res = await fetch(withRepoId('/api/shares', repoId));
   if (!res.ok) throw new Error(`listShares failed: ${res.status}`);
   const data = (await res.json()) as { shares: RepoShare[] };
   return data.shares;
 }
 
 export async function addShare(repoId: string, githubLogin: string): Promise<RepoShare> {
-  const res = await fetch(withRepoId('/api/admin/shares', repoId), {
+  const res = await fetch(withRepoId('/api/shares/invite', repoId), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ githubLogin }),
@@ -219,7 +219,7 @@ export async function addShare(repoId: string, githubLogin: string): Promise<Rep
 
 export async function revokeShare(repoId: string, githubLogin: string): Promise<RepoShare> {
   const res = await fetch(
-    withRepoId(`/api/admin/shares/${encodeURIComponent(githubLogin)}`, repoId),
+    withRepoId(`/api/shares/${encodeURIComponent(githubLogin)}`, repoId),
     { method: 'DELETE' },
   );
   if (!res.ok) throw new Error(`revokeShare failed: ${res.status}`);
