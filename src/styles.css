@@ -889,6 +889,62 @@ main {
   padding: 0;
 }
 
+.admin-autogen-form {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin: 0.5rem 0 0.75rem;
+  max-width: 32rem;
+}
+
+.admin-autogen-toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 500;
+  color: var(--fg);
+  margin-bottom: 0.4rem;
+}
+
+.admin-autogen-toggle input[type="checkbox"] {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: var(--accent);
+}
+
+.admin-autogen-form label {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin: 0;
+}
+
+.admin-autogen-form select,
+.admin-autogen-form input[type="number"] {
+  padding: 0.45rem 0.65rem;
+  font-size: 0.95rem;
+  font-family: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  min-width: 6rem;
+  max-width: 12rem;
+}
+
+.admin-autogen-form select:disabled,
+.admin-autogen-form input[type="number"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-autogen-form button[type="submit"] {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 0.4rem;
+}
+
 .share-list {
   list-style: none;
   padding: 0;

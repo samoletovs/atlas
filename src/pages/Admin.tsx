@@ -1,12 +1,22 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { useRepo } from '../App';
-import { addShare, listShares, revokeShare, RepoShare } from '../lib/api';
+import { useMe, useRepo } from '../App';
+import {
+  addShare,
+  listShares,
+  revokeShare,
+  updateRepoSettings,
+  AutoGenInterval,
+  RepoShare,
+} from '../lib/api';
+
+const INTERVAL_OPTIONS: AutoGenInterval[] = [4, 8, 12, 24];
 
 /**
  * /admin — owner-only.
  *
  * Lists `repoShares` rows for the currently selected repo. Owner can:
+ *   - configure autonomous lesson generation (P4)
  *   - invite a GitHub user by login (creates a `member` share, idempotent)
  *   - revoke an active share (soft-delete, sets `revokedAt`)
  *
@@ -15,6 +25,7 @@ import { addShare, listShares, revokeShare, RepoShare } from '../lib/api';
  */
 export function Admin() {
   const { repoId, role, allowedRepos } = useRepo();
+  const { refreshMe } = useMe();
   const repo = allowedRepos.find((r) => r.repoId === repoId);
 
   const [shares, setShares] = useState<RepoShare[] | null>(null);
@@ -23,6 +34,45 @@ export function Admin() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [busyLogin, setBusyLogin] = useState<string | null>(null);
+
+  // P4: autonomous-generation settings. Initialised from the repo entry on
+  // `/api/me`; fall back to platform defaults if absent.
+  const initialAutoGenerate = repo?.autoGenerate ?? false;
+  const initialInterval = (repo?.intervalHours ?? 24) as AutoGenInterval;
+  const initialUnreadTarget = repo?.unreadTarget ?? 20;
+  const [autoGenerate, setAutoGenerate] = useState<boolean>(initialAutoGenerate);
+  const [intervalHours, setIntervalHours] =
+    useState<AutoGenInterval>(initialInterval);
+  const [unreadTarget, setUnreadTarget] = useState<number>(initialUnreadTarget);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSavedAt, setSettingsSavedAt] = useState<number | null>(null);
+  const lastRunAt = repo?.lastRunAt ?? null;
+
+  // When the user switches to a different repo, reset the form to that
+  // repo's current settings rather than keeping the previous one's.
+  useEffect(() => {
+    setAutoGenerate(repo?.autoGenerate ?? false);
+    setIntervalHours((repo?.intervalHours ?? 24) as AutoGenInterval);
+    setUnreadTarget(repo?.unreadTarget ?? 20);
+    setSettingsError(null);
+    setSettingsSavedAt(null);
+  }, [repo?.repoId, repo?.autoGenerate, repo?.intervalHours, repo?.unreadTarget]);
+
+  const settingsDirty = useMemo(
+    () =>
+      autoGenerate !== initialAutoGenerate ||
+      intervalHours !== initialInterval ||
+      unreadTarget !== initialUnreadTarget,
+    [
+      autoGenerate,
+      intervalHours,
+      unreadTarget,
+      initialAutoGenerate,
+      initialInterval,
+      initialUnreadTarget,
+    ],
+  );
 
   const refresh = useCallback(async () => {
     setLoadError(null);
@@ -72,6 +122,27 @@ export function Admin() {
     }
   }
 
+  async function handleSaveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSettingsBusy(true);
+    setSettingsError(null);
+    try {
+      await updateRepoSettings(repoId, {
+        autoGenerate,
+        intervalHours,
+        unreadTarget,
+      });
+      // Refresh /api/me so the updated values land in the AllowedRepo
+      // context everywhere (UserMenu, repo switcher, etc.).
+      await refreshMe();
+      setSettingsSavedAt(Date.now());
+    } catch (err) {
+      setSettingsError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
   const active = shares?.filter((s) => !s.revokedAt) ?? [];
   const revoked = shares?.filter((s) => s.revokedAt) ?? [];
 
@@ -82,6 +153,75 @@ export function Admin() {
         Invite collaborators by GitHub username. They’ll get read access to this
         repo’s lesson library and can track their own progress independently.
       </p>
+
+      <section className="admin-autogen">
+        <h3>Auto-generate lessons</h3>
+        <p className="muted">
+          When enabled, atlas keeps your unread queue topped up by analysing
+          recent commits on this repo and proposing new lessons on a schedule.
+          Generation runs server-side; you only see it as fresh items in
+          “Next up”.
+        </p>
+        <form onSubmit={handleSaveSettings} className="admin-autogen-form">
+          <label className="admin-autogen-toggle">
+            <input
+              type="checkbox"
+              checked={autoGenerate}
+              onChange={(e) => setAutoGenerate(e.target.checked)}
+              disabled={settingsBusy}
+            />
+            <span>Enable autonomous generation</span>
+          </label>
+
+          <label htmlFor="autogen-interval">Run every</label>
+          <select
+            id="autogen-interval"
+            value={intervalHours}
+            onChange={(e) =>
+              setIntervalHours(Number(e.target.value) as AutoGenInterval)
+            }
+            disabled={settingsBusy || !autoGenerate}
+          >
+            {INTERVAL_OPTIONS.map((h) => (
+              <option key={h} value={h}>
+                {h} hours
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="autogen-target">Target unread lessons</label>
+          <input
+            id="autogen-target"
+            type="number"
+            min={1}
+            max={100}
+            step={1}
+            value={unreadTarget}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n)) setUnreadTarget(Math.round(n));
+            }}
+            disabled={settingsBusy || !autoGenerate}
+          />
+
+          <button
+            type="submit"
+            className="btn-primary"
+            disabled={settingsBusy || !settingsDirty}
+          >
+            {settingsBusy ? 'Saving…' : 'Save settings'}
+          </button>
+        </form>
+        {settingsError && <p className="error">{settingsError}</p>}
+        {settingsSavedAt && !settingsError && !settingsDirty && (
+          <p className="muted">Saved.</p>
+        )}
+        {lastRunAt && (
+          <p className="muted">
+            Last auto-run: {new Date(lastRunAt).toLocaleString()}
+          </p>
+        )}
+      </section>
 
       <section className="admin-invite">
         <h3>Invite</h3>

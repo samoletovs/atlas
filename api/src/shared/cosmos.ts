@@ -96,6 +96,9 @@ export interface Lesson {
 
 export type RepoVisibility = 'private' | 'unlisted' | 'public';
 
+/** Allowed cadences for autonomous lesson generation, in hours. */
+export type AutoGenInterval = 4 | 8 | 12 | 24;
+
 export interface Repo {
   id: string;            // same as repoId, e.g. 'samoletovs/nauroLabs'
   repoId: string;
@@ -104,7 +107,30 @@ export interface Repo {
   githubUrl: string;
   visibility: RepoVisibility;
   createdAt: string;
+
+  // ---------------------------------------------------------------------
+  // P4: autonomous lesson generation. All optional so existing repo docs
+  // remain valid; defaults are applied at read-time and in the Python
+  // script.
+  //   autoGenerate       — opt-in toggle. Default off.
+  //   intervalHours      — how often to consider this repo (4/8/12/24).
+  //   unreadTarget       — replenish until owner has at least N unread.
+  //   lastRunAt          — ISO timestamp of the last auto-gen attempt.
+  //   lastSeenCommitSha  — newest commit sha we've already digested.
+  // ---------------------------------------------------------------------
+  autoGenerate?: boolean;
+  intervalHours?: AutoGenInterval;
+  unreadTarget?: number;
+  lastRunAt?: string | null;
+  lastSeenCommitSha?: string | null;
 }
+
+/** Server-side defaults applied when a setting is missing on a Repo doc. */
+export const AUTO_GEN_DEFAULTS = {
+  autoGenerate: false,
+  intervalHours: 24 as AutoGenInterval,
+  unreadTarget: 20,
+} as const;
 
 export interface LessonV2 {
   id: string;

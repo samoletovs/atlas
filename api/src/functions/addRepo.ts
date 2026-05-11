@@ -24,6 +24,7 @@ import {
   lessonsV2Container,
   Repo,
   LessonV2,
+  AUTO_GEN_DEFAULTS,
 } from '../shared/cosmos.js';
 import { getPrincipal, isAuthenticated } from '../shared/auth.js';
 import {
@@ -141,6 +142,14 @@ export async function addRepo(
     githubUrl: meta.htmlUrl,
     visibility: 'private',
     createdAt: now,
+    // P4: autonomous generation is off by default — owner opts in from the
+    // Admin page. Defaults still live in AUTO_GEN_DEFAULTS so older docs
+    // that lack these fields behave identically.
+    autoGenerate: AUTO_GEN_DEFAULTS.autoGenerate,
+    intervalHours: AUTO_GEN_DEFAULTS.intervalHours,
+    unreadTarget: AUTO_GEN_DEFAULTS.unreadTarget,
+    lastRunAt: null,
+    lastSeenCommitSha: null,
   };
   const { resource: createdRepo } = await reposRef.items.create(newRepo);
   ctx.log(`addRepo: created ${repoId} owned by ${userId}`);
