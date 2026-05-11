@@ -107,11 +107,16 @@ Rules for every lesson you write:
    doubled answer accuracy. Here's why."
 4. Structure: Hook → Core concept → Trade-offs / when-it-applies → Why it matters in practice.
 5. Use plain language. The reader is functional, not deep technical. Define jargon on first use.
-6. Cite 1–3 authoritative sources at the end as plain URLs (Microsoft Learn preferred).
+6. Cite 1–3 authoritative sources (Microsoft Learn preferred). Put them ONLY in the
+   `citations` array of the output JSON. Do NOT write a "Sources", "References",
+   "For more information", or "Further reading" section in the body markdown — the
+   system renders the citations as a "Sources" section automatically.
 7. Avoid code blocks unless 3–6 lines maximum and absolutely necessary. Prefer prose.
 8. Do NOT bury the lede. The "why this matters" should be in the first or second paragraph.
-9. End every lesson with 2–3 "What to learn next" suggestions in JSON format the system can
-   parse. Topics adjacent (sideways) or one level deeper.
+9. Propose 2–3 "What to learn next" suggestions. Put them ONLY in the `suggested_next` array
+   of the output JSON. Do NOT write a "What to learn next", "Suggested next steps", or
+   "Next steps" section in the body markdown — the system renders that section automatically
+   with clickable Generate buttons for the reader. Topics adjacent (sideways) or one level deeper.
 
 Markdown formatting (use these to make scanning the lesson on a phone effortless):
 
@@ -139,13 +144,21 @@ fields exactly:
   "topic": "the topic slug provided",
   "depth": "intro|intermediate|deep",
   "read_minutes": <int 2..7>,
-  "body": "the markdown body of the lesson",
+  "body": "the markdown body of the lesson — prose only, no Sources section, no Next-steps section",
   "citations": ["https://learn.microsoft.com/...", "..."],
   "suggested_next": [
     {"title": "...", "topic": "topic-slug", "rationale": "1-sentence why"},
     {"title": "...", "topic": "topic-slug", "rationale": "1-sentence why"}
   ]
 }
+
+Hard requirements for the `body` field:
+- It must be pure markdown prose (with the bolds, callouts, cross-links, and lists from rules 10–13).
+- It must NOT contain any of these section headings (case-insensitive): "Sources", "References",
+  "For more information", "Further reading", "What to learn next", "Suggested next steps",
+  "Next steps", "Resources".
+- It must NOT contain raw JSON, JSON-like bullets such as `{"title": ...}`, or a bullet list of
+  URLs at the end. Citations and next-step suggestions belong ONLY in their structured fields.
 
 Output ONLY the JSON. No prose around it. No markdown fences. Plain JSON.
 """
@@ -314,9 +327,89 @@ def generate_lesson(
         # Strip code-fences if model added them despite instructions
         text = re.sub(r"^```(?:json)?\s*\n", "", text)
         text = re.sub(r"\n```\s*$", "", text)
-        return json.loads(text)
+        payload = json.loads(text)
+        payload = _sanitize_lesson_payload(payload)
+        return payload
     finally:
         client.threads.delete(thread.id)
+
+
+# Section headings the teacher must not put in the body. If present, we strip
+# them (and everything after the heading) defensively, and salvage any structured
+# data so the renderer can still show the buttons.
+_BAD_BODY_SECTIONS = (
+    r"sources",
+    r"citations",
+    r"references",
+    r"for\s+more\s+(?:information|info|detailed\s+guidance|details|insights)",
+    r"further\s+reading",
+    r"what\s+to\s+learn\s+next(?:\s+suggestions)?",
+    r"suggested\s+next(?:\s+(?:steps|topics))?",
+    r"next\s+steps",
+    r"resources",
+    r"citing\s+authoritative\s+sources",
+)
+
+
+def _sanitize_lesson_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Strip 'Sources'/'What to learn next' sections from body and salvage them
+    into structured fields if the agent ignored the instructions."""
+    body = payload.get("body", "") or ""
+    if not isinstance(body, str):
+        return payload
+
+    sections_alt = "|".join(_BAD_BODY_SECTIONS)
+    # Match the earliest forbidden section opener. Three accepted forms:
+    #   1. Markdown heading:     ^#{1,6} <heading>$  (anywhere on the line)
+    #   2. Bold inline label:    ^**<heading>**:?$
+    #   3. Plain prose label:    ^<heading>[^\n]*:\s*$   (line ends with a colon
+    #      after the keyword — e.g. "Citations:", "Suggested next topics:",
+    #      "For more information, check out these resources:")
+    pattern = re.compile(
+        rf"(?im)^[ \t]*(?:"
+        rf"#{{1,6}}[ \t]+(?:{sections_alt})\b[^\n]*"
+        rf"|\*\*\s*(?:{sections_alt})\b[^*\n]*\*\*:?"
+        rf"|(?:{sections_alt})\b[^\n]*:\s*"
+        rf")[ \t]*\n",
+    )
+    m = pattern.search(body)
+    if m:
+        tail = body[m.start():]
+        body = body[: m.start()].rstrip() + "\n"
+
+        # Salvage citations (bare URLs and markdown-link URLs) from the tail.
+        if not payload.get("citations"):
+            md_links = re.findall(r"\[[^\]]+\]\((https?://[^\s\)]+)\)", tail)
+            bare = re.findall(r"(?<![\(\[\"'])https?://[^\s\)\]\"']+", tail)
+            all_urls = md_links + bare
+            seen: set[str] = set()
+            deduped: list[str] = []
+            for u in all_urls:
+                u = u.rstrip(".,);:")
+                if u not in seen:
+                    seen.add(u)
+                    deduped.append(u)
+            if deduped:
+                payload["citations"] = deduped[:3]
+
+        # Salvage suggested_next JSON objects from the tail.
+        if not payload.get("suggested_next"):
+            obj_pattern = re.compile(
+                r"\{\s*\"title\"\s*:\s*\"[^\"]+\"\s*,\s*\"topic\"\s*:\s*\"[^\"]+\"\s*,\s*\"rationale\"\s*:\s*\"[^\"]+\"\s*\}",
+            )
+            found = obj_pattern.findall(tail)
+            salvaged: list[dict[str, Any]] = []
+            for raw in found:
+                try:
+                    salvaged.append(json.loads(raw))
+                except json.JSONDecodeError:
+                    continue
+            if salvaged:
+                payload["suggested_next"] = salvaged[:3]
+
+    payload["body"] = body.strip()
+    return payload
+
 
 
 # --- Cosmos -----------------------------------------------------------------
