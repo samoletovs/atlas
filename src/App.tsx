@@ -159,15 +159,9 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
 
 function RepoPicker() {
   const { repoId, setRepoId, allowedRepos } = useRepo();
-  if (allowedRepos.length <= 1) {
-    // Single repo — show its name as a static label so the user knows the scope.
-    const only = allowedRepos[0];
-    return only ? (
-      <span className="repo-picker repo-picker-static" title={only.repoId}>
-        {only.name}
-      </span>
-    ) : null;
-  }
+  // With one (or zero) repo there is no choice to make — hide the control entirely.
+  // The dropdown reappears automatically as soon as a second repo is connected.
+  if (allowedRepos.length <= 1) return null;
   return (
     <select
       className="repo-picker"
