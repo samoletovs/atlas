@@ -1051,11 +1051,538 @@ def run_enhance(force: bool = False, dry_run: bool = False, limit: int | None = 
     return 0 if failed == 0 else 2
 
 
+# --- Auto mode (per-repo autonomous generation, P4) -------------------------
+#
+# For each `repos` doc where `autoGenerate = true`, if the interval has
+# elapsed since the last run, count unread published lessons for the owner
+# and — if below `unreadTarget` — propose `(unreadTarget - unread)` new
+# lessons from recent commit activity. Queued docs land in `lessons_v2`
+# with empty body; the same run then drains them via `run_pending()`.
+#
+# Reads:
+#   - cosmos `repos` (cross-partition WHERE autoGenerate = true)
+#   - cosmos `lessons_v2` (per-repoId, count published + non-archived)
+#   - cosmos `lessonProgress` (per-userId, count read)
+#   - GitHub commits API (anonymous, or PAT from GITHUB_TOKEN_FOR_ATLAS env)
+# Writes:
+#   - cosmos `lessons_v2` (insert queued stubs)
+#   - cosmos `repos` (update lastRunAt + lastSeenCommitSha)
+
+GITHUB_TOKEN_FOR_ATLAS = os.environ.get("GITHUB_TOKEN_FOR_ATLAS", "")
+
+AUTO_GEN_DEFAULTS_INTERVAL = 24
+AUTO_GEN_DEFAULTS_UNREAD_TARGET = 20
+# Cap per-run regardless of unreadTarget, so a misconfigured repo can't
+# explode token spend.
+AUTO_GEN_MAX_PER_RUN = 10
+
+PLANNER_INSTRUCTIONS = """You are atlas-planner — you propose lesson topics for a working consultant
+who is pivoting from D365 functional work toward Azure / agentic solutions. You are given a
+code repository the consultant is building (or shares with collaborators), the most recent
+commit messages on the default branch, and a list of topics already covered as lessons in
+their atlas library. Propose N new lesson topics that would help this consultant.
+
+Rules:
+1. Each proposal must be a standalone lesson, not a continuation of an existing one.
+2. Pick angles that explain the WHY behind a change, not the exact code lines. A commit
+   like "wire DefaultAzureCredential" should yield a lesson on **managed identity**, not
+   one on python syntax.
+3. Avoid duplicates. Skip any topic that is already on the "existing topics" list, even
+   approximately (e.g. if "managed-identity" exists, do not propose "managed-identity-overview").
+4. Keep topic slugs specific and kebab-case. "azure-auth" is too broad. Prefer
+   "managed-identity-vs-service-principal" or "cosmos-partition-key-design".
+5. Vary depth thoughtfully: "intro" for new ground for this repo, "intermediate" for
+   areas already represented at intro depth, "deep" only if the consultant has at least
+   3 intro-level lessons on the same area.
+6. Each rationale must be one short sentence that says why THIS reader, given the recent
+   commits, should care today.
+
+Output a single JSON object with EXACTLY this shape:
+
+{
+  "items": [
+    {
+      "title": "Short descriptive title (max 60 chars)",
+      "topic": "kebab-case-slug",
+      "depth": "intro|intermediate|deep",
+      "rationale": "1-sentence why this matters now",
+      "source_sha": "<commit sha you tied this to, or empty>",
+      "source_summary": "<one-line commit message or 'repo overview'>"
+    }
+  ]
+}
+
+Output exactly N items in the `items` array. No prose around the JSON. No markdown fences.
+"""
+
+
+def _get_or_create_planner_agent(client: AgentsClient) -> str:
+    """Return the agent_id for atlas-planner. Recreates on each run to keep instructions fresh."""
+    name = "atlas-planner"
+    for agent in client.list_agents():
+        if agent.name == name:
+            try:
+                client.update_agent(
+                    agent_id=agent.id,
+                    model=FOUNDRY_DEPLOYMENT,
+                    instructions=PLANNER_INSTRUCTIONS,
+                    temperature=0.5,
+                )
+                log.info("Reusing planner agent %s", agent.id)
+                return agent.id
+            except Exception:  # noqa: BLE001
+                try:
+                    client.delete_agent(agent.id)
+                except Exception:  # noqa: BLE001
+                    pass
+                break
+    log.info("Creating atlas-planner agent")
+    agent = client.create_agent(
+        model=FOUNDRY_DEPLOYMENT,
+        name=name,
+        instructions=PLANNER_INSTRUCTIONS,
+        temperature=0.5,
+    )
+    return agent.id
+
+
+def _fetch_auto_repos(cosmos: CosmosClient) -> list[dict[str, Any]]:
+    """Return all repos with autoGenerate = true, cross-partition."""
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("repos")
+    items = container.query_items(
+        query="SELECT * FROM c WHERE c.autoGenerate = true",
+        enable_cross_partition_query=True,
+    )
+    return list(items)
+
+
+def _count_unread_for_owner(
+    cosmos: CosmosClient,
+    repo_id: str,
+    owner_id: str,
+    language: str,
+) -> int:
+    """Count `published` lessons in this repo+language that the owner has NOT read."""
+    db = cosmos.get_database_client(COSMOS_DATABASE)
+
+    lessons = db.get_container_client("lessons_v2")
+    pub_query = lessons.query_items(
+        query=(
+            "SELECT VALUE c.id FROM c "
+            "WHERE c.repoId = @rid AND c.language = @lang AND c.status = 'published'"
+        ),
+        parameters=[
+            {"name": "@rid", "value": repo_id},
+            {"name": "@lang", "value": language},
+        ],
+        partition_key=repo_id,
+    )
+    published_ids = set(pub_query)
+    if not published_ids:
+        return 0
+
+    progress = db.get_container_client("lessonProgress")
+    read_query = progress.query_items(
+        query=(
+            "SELECT VALUE c.lessonId FROM c "
+            "WHERE c.userId = @uid AND c.repoId = @rid AND c.status = 'read'"
+        ),
+        parameters=[
+            {"name": "@uid", "value": owner_id},
+            {"name": "@rid", "value": repo_id},
+        ],
+        partition_key=owner_id,
+    )
+    read_ids = set(read_query)
+    return len(published_ids - read_ids)
+
+
+def _existing_topic_slugs(
+    cosmos: CosmosClient,
+    repo_id: str,
+    language: str,
+) -> list[str]:
+    """Return distinct topic slugs already covered in this repo+language (any status)."""
+    lessons = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons_v2")
+    rows = lessons.query_items(
+        query=(
+            "SELECT DISTINCT VALUE c.topic FROM c "
+            "WHERE c.repoId = @rid AND c.language = @lang AND c.status != 'archived'"
+        ),
+        parameters=[
+            {"name": "@rid", "value": repo_id},
+            {"name": "@lang", "value": language},
+        ],
+        partition_key=repo_id,
+    )
+    return sorted({slug for slug in rows if slug})
+
+
+def _parse_github_repo_id(repo_id: str) -> tuple[str, str] | None:
+    """`samoletovs__nauroLabs` → ('samoletovs', 'nauroLabs')."""
+    parts = repo_id.split("__", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return parts[0], parts[1]
+
+
+def _github_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "atlas-naurolabs",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if GITHUB_TOKEN_FOR_ATLAS:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN_FOR_ATLAS}"
+    return headers
+
+
+def _fetch_recent_commits(
+    owner: str,
+    repo_name: str,
+    since_sha: str | None,
+    n: int = 20,
+) -> list[dict[str, Any]]:
+    """Fetch up to `n` recent commits on the default branch. Returns [] on error.
+
+    If `since_sha` is provided, returns only commits that came AFTER it
+    (newer than the last one we digested). We page from the head and stop
+    when we hit `since_sha`.
+    """
+    import urllib.request
+    import urllib.error
+
+    url = f"https://api.github.com/repos/{owner}/{repo_name}/commits?per_page={n}"
+    req = urllib.request.Request(url, headers=_github_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        log.warning("  GitHub commits %s/%s failed: HTTP %s", owner, repo_name, exc.code)
+        return []
+    except Exception as exc:  # noqa: BLE001
+        log.warning("  GitHub commits %s/%s failed: %s", owner, repo_name, exc)
+        return []
+    if not isinstance(data, list):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for c in data:
+        if not isinstance(c, dict):
+            continue
+        sha = c.get("sha") or ""
+        if since_sha and sha == since_sha:
+            break  # everything before this we've already seen
+        commit = c.get("commit") or {}
+        message = (commit.get("message") or "").strip().splitlines()[0][:200]
+        author = (commit.get("author") or {}).get("name") or ""
+        date = (commit.get("author") or {}).get("date") or ""
+        out.append({"sha": sha, "message": message, "author": author, "date": date})
+    return out
+
+
+def _fetch_readme(owner: str, repo_name: str) -> str:
+    """Fetch raw README markdown, capped to 6_000 chars. Returns '' on error."""
+    import urllib.request
+    import urllib.error
+
+    url = f"https://api.github.com/repos/{owner}/{repo_name}/readme"
+    headers = {**_github_headers(), "Accept": "application/vnd.github.raw"}
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            text = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError:
+        return ""
+    except Exception:  # noqa: BLE001
+        return ""
+    return text[:6_000]
+
+
+def _run_planner(
+    client: AgentsClient,
+    agent_id: str,
+    repo_doc: dict[str, Any],
+    commits: list[dict[str, Any]],
+    readme_excerpt: str,
+    existing_topics: list[str],
+    needed: int,
+    language: str,
+) -> list[dict[str, Any]]:
+    """Ask the planner to propose `needed` new lesson topics. Returns the items list."""
+    repo_name = repo_doc.get("name") or repo_doc.get("repoId", "")
+    payload = {
+        "repo": {
+            "id": repo_doc.get("repoId"),
+            "name": repo_name,
+            "githubUrl": repo_doc.get("githubUrl"),
+        },
+        "language": language,
+        "needed": needed,
+        "existing_topics": existing_topics,
+        "recent_commits": commits,
+        "readme_excerpt": readme_excerpt,
+    }
+    user_prompt = json.dumps(payload, ensure_ascii=False, indent=2)
+    if language == "ru":
+        user_prompt += (
+            "\n\nIMPORTANT: Generate titles and rationale strings in Russian (Русский). "
+            "Topic slugs stay in English."
+        )
+
+    thread = client.threads.create()
+    try:
+        client.messages.create(
+            thread_id=thread.id,
+            role=MessageRole.USER,
+            content=user_prompt,
+        )
+        run = client.runs.create_and_process(
+            thread_id=thread.id,
+            agent_id=agent_id,
+        )
+        if str(run.status) != "RunStatus.COMPLETED" and run.status != "completed":
+            raise RuntimeError(f"Planner run failed: {getattr(run, 'last_error', None)}")
+        msgs = list(
+            client.messages.list(
+                thread_id=thread.id,
+                order=ListSortOrder.ASCENDING,
+            ),
+        )
+        agent_msg = next(m for m in reversed(msgs) if m.role == MessageRole.AGENT)
+        text = "\n".join(t.text.value for t in agent_msg.text_messages).strip()
+        text = re.sub(r"^```(?:json)?\s*\n", "", text)
+        text = re.sub(r"\n```\s*$", "", text)
+        result = json.loads(text)
+    finally:
+        client.threads.delete(thread.id)
+
+    items = result.get("items") if isinstance(result, dict) else None
+    if not isinstance(items, list):
+        return []
+
+    cleaned: list[dict[str, Any]] = []
+    seen_slugs = {s.lower() for s in existing_topics}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        title = (it.get("title") or "").strip()
+        topic = (it.get("topic") or "").strip().lower()
+        depth = (it.get("depth") or "intro").strip().lower()
+        if depth not in {"intro", "intermediate", "deep"}:
+            depth = "intro"
+        if not title or not topic:
+            continue
+        if topic in seen_slugs:
+            continue
+        seen_slugs.add(topic)
+        cleaned.append({
+            "title": title[:120],
+            "topic": topic[:120],
+            "depth": depth,
+            "rationale": (it.get("rationale") or "").strip()[:400],
+            "source_sha": (it.get("source_sha") or "").strip()[:40],
+            "source_summary": (it.get("source_summary") or "").strip()[:200],
+        })
+    return cleaned[:needed]
+
+
+def _slugify_for_id(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:50] or "lesson"
+
+
+def _queue_lesson_stub(
+    cosmos: CosmosClient,
+    repo_doc: dict[str, Any],
+    item: dict[str, Any],
+    language: str,
+) -> str:
+    """Create a queued lesson stub in lessons_v2. Returns the new id."""
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons_v2")
+    repo_id = repo_doc["repoId"]
+    owner_id = repo_doc["ownerId"]
+    slug = _slugify_for_id(item["title"])
+    suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    lesson_id = f"lesson-{language}-{slug}-{suffix}"
+
+    source_event: dict[str, Any] | None = None
+    if item.get("source_sha") or item.get("source_summary"):
+        source_event = {
+            "type": "commit" if item.get("source_sha") else "repo-meta",
+            "ref": item.get("source_sha") or repo_doc.get("githubUrl", ""),
+            "summary": item.get("source_summary") or item.get("rationale", ""),
+        }
+
+    doc = {
+        "id": lesson_id,
+        "repoId": repo_id,
+        "ownerId": owner_id,
+        "title": item["title"],
+        "topic": item["topic"],
+        "depth": item["depth"],
+        "read_minutes": 4,
+        "body": "",
+        "citations": [],
+        "suggested_next": [],
+        "source_event": source_event,
+        "status": "queued",
+        "language": language,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    container.create_item(body=doc)
+    return lesson_id
+
+
+def _update_repo_state(
+    cosmos: CosmosClient,
+    repo_doc: dict[str, Any],
+    last_run_at: str,
+    last_seen_commit_sha: str | None,
+) -> None:
+    """Patch lastRunAt + lastSeenCommitSha on the repo doc."""
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("repos")
+    repo_doc["lastRunAt"] = last_run_at
+    if last_seen_commit_sha:
+        repo_doc["lastSeenCommitSha"] = last_seen_commit_sha
+    container.replace_item(item=repo_doc["id"], body=repo_doc)
+
+
+def _is_due(repo_doc: dict[str, Any], now_utc: datetime) -> bool:
+    """True if the configured interval has elapsed since the last run."""
+    last_run = repo_doc.get("lastRunAt")
+    if not last_run:
+        return True
+    interval_hours = repo_doc.get("intervalHours", AUTO_GEN_DEFAULTS_INTERVAL)
+    try:
+        last = datetime.fromisoformat(str(last_run).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    elapsed_hours = (now_utc - last).total_seconds() / 3600.0
+    # Subtract a small slack so a 4h cadence runs reliably on a 4h cron.
+    return elapsed_hours >= (float(interval_hours) - 0.1)
+
+
+def run_auto() -> int:
+    """Plan + queue + drain for every opt-in repo.
+
+    Always finishes by calling `run_pending()` so queued docs from this run
+    (and any older stuck queue) get drained in the same workflow execution.
+    """
+    cosmos = get_cosmos_client()
+    repos = _fetch_auto_repos(cosmos)
+    log.info("Mode: AUTO — %d repo(s) with autoGenerate=true.", len(repos))
+
+    now = datetime.now(timezone.utc)
+    queued_this_run = 0
+    planner_agent_id: str | None = None
+    agents: AgentsClient | None = None
+
+    for repo_doc in repos:
+        repo_id = repo_doc.get("repoId") or repo_doc.get("id") or ""
+        owner_id = repo_doc.get("ownerId") or ""
+        if not repo_id or not owner_id:
+            log.warning("  SKIP malformed repo doc id=%r", repo_doc.get("id"))
+            continue
+
+        if not _is_due(repo_doc, now):
+            interval = repo_doc.get("intervalHours", AUTO_GEN_DEFAULTS_INTERVAL)
+            log.info("  SKIP %s — not due yet (interval %sh, last run %s)",
+                     repo_id, interval, repo_doc.get("lastRunAt"))
+            continue
+
+        unread_target = int(
+            repo_doc.get("unreadTarget") or AUTO_GEN_DEFAULTS_UNREAD_TARGET,
+        )
+        unread_target = max(1, min(unread_target, 100))
+        # Use English as the canonical language for unread budgeting — Russian
+        # mirrors are bolt-ons, not gating signal.
+        unread = _count_unread_for_owner(cosmos, repo_id, owner_id, "en")
+        needed = unread_target - unread
+        log.info("  CHECK %s — unread=%d target=%d needed=%d",
+                 repo_id, unread, unread_target, needed)
+
+        if needed <= 0:
+            _update_repo_state(cosmos, repo_doc, now.isoformat(), None)
+            continue
+
+        # Cap so a misconfigured target can't blow the token budget.
+        needed = min(needed, AUTO_GEN_MAX_PER_RUN)
+
+        parsed = _parse_github_repo_id(repo_id)
+        if not parsed:
+            log.warning("  SKIP %s — could not parse owner/repo", repo_id)
+            continue
+        gh_owner, gh_repo = parsed
+
+        commits = _fetch_recent_commits(
+            gh_owner,
+            gh_repo,
+            since_sha=repo_doc.get("lastSeenCommitSha"),
+            n=20,
+        )
+        readme = _fetch_readme(gh_owner, gh_repo) if not commits else ""
+        if not commits and not readme:
+            log.warning("  SKIP %s — no commits and no README (rate-limited or private?)", repo_id)
+            _update_repo_state(cosmos, repo_doc, now.isoformat(), None)
+            continue
+
+        existing = _existing_topic_slugs(cosmos, repo_id, "en")
+        log.info("  PLAN  %s — proposing %d topic(s) (have %d existing, %d commits)",
+                 repo_id, needed, len(existing), len(commits))
+
+        if agents is None:
+            agents = make_agents_client()
+        if planner_agent_id is None:
+            planner_agent_id = _get_or_create_planner_agent(agents)
+
+        try:
+            proposals = _run_planner(
+                agents,
+                planner_agent_id,
+                repo_doc,
+                commits,
+                readme,
+                existing,
+                needed,
+                language="en",
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.error("  FAIL planner for %s: %s", repo_id, exc)
+            continue
+
+        if not proposals:
+            log.info("  -> planner returned no usable proposals for %s", repo_id)
+            _update_repo_state(cosmos, repo_doc, now.isoformat(), None)
+            continue
+
+        for p in proposals:
+            try:
+                lid = _queue_lesson_stub(cosmos, repo_doc, p, language="en")
+                queued_this_run += 1
+                log.info("    QUEUED %s [en] %s", p["topic"], p["title"])
+                _ = lid  # for log clarity
+            except Exception as exc:  # noqa: BLE001
+                log.error("    FAIL queue %s: %s", p.get("topic"), exc)
+
+        newest_sha = commits[0]["sha"] if commits else repo_doc.get("lastSeenCommitSha")
+        _update_repo_state(cosmos, repo_doc, now.isoformat(), newest_sha)
+
+    log.info("Planner phase done. Queued %d new lesson(s). Draining…", queued_this_run)
+    # Always drain at the end so the same workflow run produces visible output.
+    return run_pending()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", action="store_true", help="generate seed lessons")
     parser.add_argument("--pending", action="store_true",
                         help="drain queued lessons (status='queued') by generating their bodies")
+    parser.add_argument("--auto", action="store_true",
+                        help="run autonomous generation: for each opt-in repo whose interval has "
+                             "elapsed, propose new topics from recent commits and queue+drain them. "
+                             "Always drains existing queued lessons as well.")
     parser.add_argument("--enhance", action="store_true",
                         help="retrofit existing lessons with bold + callouts + wiki-links")
     parser.add_argument("--force", action="store_true",
@@ -1069,12 +1596,14 @@ def main() -> int:
     args = parser.parse_args()
     if args.enhance:
         return run_enhance(force=args.force, dry_run=args.dry_run, limit=args.limit)
+    if args.auto:
+        return run_auto()
     if args.pending:
         return run_pending()
     if args.seed:
         run_seed(args.lang)
         return 0
-    log.error("No mode selected. Use --seed, --pending, or --enhance.")
+    log.error("No mode selected. Use --seed, --pending, --auto, or --enhance.")
     return 1
 
 

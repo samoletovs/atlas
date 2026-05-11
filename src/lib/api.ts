@@ -11,6 +11,9 @@ export interface ClientPrincipal {
 
 export type AtlasRole = 'owner' | 'member';
 
+/** Allowed cadences (hours) for autonomous lesson generation. */
+export type AutoGenInterval = 4 | 8 | 12 | 24;
+
 export interface AllowedRepo {
   repoId: string;
   name: string;
@@ -19,6 +22,11 @@ export interface AllowedRepo {
   visibility: 'private' | 'unlisted' | 'public';
   /** P2: caller's role on this repo. Owners see admin/generate UI. */
   role: AtlasRole;
+  /** P4: autonomous-generation settings. Only sent for owners. */
+  autoGenerate?: boolean;
+  intervalHours?: AutoGenInterval;
+  unreadTarget?: number;
+  lastRunAt?: string | null;
 }
 
 export interface AtlasQuota {
@@ -260,4 +268,46 @@ export async function addRepo(githubUrl: string): Promise<AddRepoResult> {
     throw new Error(`addRepo failed: ${res.status}${detail}`);
   }
   return (await res.json()) as AddRepoResult;
+}
+
+// ---------- Auto-generate settings (P4) ----------
+
+export interface RepoSettingsPatch {
+  autoGenerate?: boolean;
+  intervalHours?: AutoGenInterval;
+  unreadTarget?: number;
+}
+
+export interface RepoSettingsResult {
+  /** Subset of the Repo doc that the UI cares about. */
+  repo: {
+    repoId: string;
+    name: string;
+    autoGenerate?: boolean;
+    intervalHours?: AutoGenInterval;
+    unreadTarget?: number;
+    lastRunAt?: string | null;
+  };
+}
+
+export async function updateRepoSettings(
+  repoId: string,
+  patch: RepoSettingsPatch,
+): Promise<RepoSettingsResult> {
+  const res = await fetch(withRepoId('/api/repos/settings', repoId), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`updateRepoSettings failed: ${res.status}${detail}`);
+  }
+  return (await res.json()) as RepoSettingsResult;
 }

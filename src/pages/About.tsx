@@ -21,12 +21,15 @@ export function About() {
         <li>Cosmos DB live in Sweden Central</li>
         <li>Foundry agent <code>atlas-teacher</code> generates lessons</li>
         <li>Multi-repo schema with shareable read-only invites</li>
-        <li>Daily GitHub Action drains the lesson queue at 06:00 UTC</li>
+        <li>
+          Autonomous backlog — opt in per repo from <strong>Admin</strong>;
+          atlas reads recent commits and tops up your unread queue every
+          4 / 8 / 12 / 24 hours
+        </li>
         <li>PWA reader with offline caching</li>
       </ul>
       <h3>Coming up</h3>
       <ul>
-        <li>Autonomous backlog: agent proposes new lessons from fresh commits</li>
         <li>Topic atlas graph view</li>
         <li>Ask-more chat</li>
       </ul>

@@ -34,6 +34,11 @@ interface AllowedRepoEntry {
   visibility: Repo['visibility'];
   githubUrl: string;
   role: AtlasRole;
+  /** P4: autonomous generation settings. Only meaningful for owners; members ignore. */
+  autoGenerate?: boolean;
+  intervalHours?: Repo['intervalHours'];
+  unreadTarget?: number;
+  lastRunAt?: string | null;
 }
 
 interface MeResponse {
@@ -147,6 +152,10 @@ export async function getMe(
       visibility: rp.visibility,
       githubUrl: rp.githubUrl,
       role: 'owner' as AtlasRole,
+      autoGenerate: rp.autoGenerate ?? false,
+      intervalHours: rp.intervalHours ?? 24,
+      unreadTarget: rp.unreadTarget ?? 20,
+      lastRunAt: rp.lastRunAt ?? null,
     })),
     ...sharedRepos.map(({ repo: rp, role }) => ({
       repoId: rp.repoId,

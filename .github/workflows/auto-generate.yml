@@ -1,12 +1,16 @@
-name: Daily lesson generator
+name: Auto-generate atlas lessons
 
-# Drains queued lessons in Cosmos every morning. Uses the same
-# `scripts/generate_lessons.py --pending` Sam runs locally, but with
-# OIDC against atlas-functions-sp (no long-lived secrets).
+# Runs every 4 hours. For each `repos` doc with autoGenerate=true whose
+# interval has elapsed, asks the planner to propose lessons from recent
+# commits and queues them; then drains every queued lesson (including
+# ones queued by the UI) via the same Foundry agent the API uses.
+#
+# Per-repo cadence and unreadTarget live on the Cosmos `repos` doc. The
+# workflow cron is just the heartbeat — gating happens in run_auto().
 
 on:
   schedule:
-    - cron: '0 6 * * *' # 06:00 UTC daily
+    - cron: '0 */4 * * *'  # every 4 hours at the top of the hour
   workflow_dispatch:
 
 permissions:
@@ -14,13 +18,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: daily-generate
+  group: auto-generate
   cancel-in-progress: false
 
 jobs:
   generate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -41,11 +45,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Drain queued lessons
+      - name: Plan + drain lessons
         env:
           COSMOS_ENDPOINT: ${{ vars.COSMOS_ENDPOINT }}
           COSMOS_DATABASE: ${{ vars.COSMOS_DATABASE }}
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
           FOUNDRY_DEPLOYMENT: ${{ vars.FOUNDRY_DEPLOYMENT }}
           ATLAS_OWNER_LOGIN: ${{ vars.ATLAS_OWNER_LOGIN }}
-        run: python scripts/generate_lessons.py --pending
+          # Optional. If present, raises GitHub anonymous rate-limit (60/h)
+          # to 5000/h and unlocks private-repo reads. Anonymous mode still
+          # works for public repos.
+          GITHUB_TOKEN_FOR_ATLAS: ${{ secrets.GITHUB_TOKEN_FOR_ATLAS }}
+        run: python scripts/generate_lessons.py --auto
