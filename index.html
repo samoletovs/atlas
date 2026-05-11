@@ -6,6 +6,25 @@
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="description" content="atlas — personal teacher" />
     <title>atlas</title>
+    <script>
+      // Apply the saved theme BEFORE React renders so first-paint matches the
+      // user's last choice — no dark-flash on light-theme users after sign-in.
+      // Server-synced preference (via /api/me) overrides this once it loads.
+      (function () {
+        try {
+          var saved = localStorage.getItem('atlas-theme');
+          var theme =
+            saved === 'light' || saved === 'dark'
+              ? saved
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (_) {
+          /* localStorage blocked — fall through, CSS default applies */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

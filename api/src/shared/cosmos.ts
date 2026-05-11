@@ -170,6 +170,16 @@ export interface RepoShare {
   revokedAt?: string | null;
 }
 
+/**
+ * Per-user UI preferences synced across devices. All optional — clients
+ * fall back to localStorage / OS preference when a field is missing.
+ */
+export interface AtlasUserPreferences {
+  theme?: 'dark' | 'light';
+  lang?: 'en' | 'ru';
+  updatedAt?: string;
+}
+
 export interface AtlasUser {
   id: string;            // same as userId (GitHub login for now)
   userId: string;        // partition key
@@ -181,5 +191,7 @@ export interface AtlasUser {
     keyCipher: string;   // AES-256-GCM ciphertext, master key in App Settings (P4)
     addedAt: string;
   };
+  /** P5: cross-device theme/lang sync. */
+  preferences?: AtlasUserPreferences;
   createdAt: string;
 }

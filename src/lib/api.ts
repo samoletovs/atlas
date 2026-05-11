@@ -37,6 +37,16 @@ export interface AtlasQuota {
   resetAt: string;
 }
 
+/**
+ * Server-synced UI preferences. Empty object when never saved —
+ * client falls back to localStorage / OS preference in that case.
+ */
+export interface AtlasPreferences {
+  theme?: 'dark' | 'light';
+  lang?: 'en' | 'ru';
+  updatedAt?: string;
+}
+
 export interface AtlasMe {
   userId: string;
   githubLogin: string;
@@ -44,6 +54,7 @@ export interface AtlasMe {
   createdAt: string;
   allowedRepos: AllowedRepo[];
   quota: AtlasQuota;
+  preferences: AtlasPreferences;
 }
 
 export interface Lesson {
@@ -310,4 +321,58 @@ export async function updateRepoSettings(
     throw new Error(`updateRepoSettings failed: ${res.status}${detail}`);
   }
   return (await res.json()) as RepoSettingsResult;
+}
+
+// ---------- Preferences (P5: theme/lang sync across devices) ----------
+
+export async function updatePreferences(
+  patch: { theme?: 'dark' | 'light'; lang?: 'en' | 'ru' },
+): Promise<AtlasPreferences> {
+  const res = await fetch('/api/me/preferences', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`updatePreferences failed: ${res.status}`);
+  const data = (await res.json()) as { preferences: AtlasPreferences };
+  return data.preferences;
+}
+
+// ---------- Ask-more chat (P5: follow-up Q&A on a lesson) ----------
+
+export interface AskChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AskResult {
+  answer: string;
+  lessonId: string;
+}
+
+export async function askLesson(
+  lessonId: string,
+  question: string,
+  history: AskChatTurn[],
+  repoId?: string,
+): Promise<AskResult> {
+  const res = await fetch(
+    withRepoId(`/api/lessons/${encodeURIComponent(lessonId)}/ask`, repoId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, history }),
+    },
+  );
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`askLesson failed: ${res.status}${detail}`);
+  }
+  return (await res.json()) as AskResult;
 }
