@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Lesson, listLessons } from '../lib/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { Lesson, listLessons, generateLessonNow } from '../lib/api';
 import { useLang, useRepo } from '../App';
 
 interface Props {
@@ -9,10 +9,14 @@ interface Props {
 
 export function LessonsList({ status }: Props) {
   const { lang } = useLang();
-  const { repoId } = useRepo();
+  const { repoId, role } = useRepo();
+  const navigate = useNavigate();
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [queued, setQueued] = useState<Lesson[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<Record<string, 'busy' | { error: string }>>({});
+
+  const isOwner = role === 'owner';
 
   useEffect(() => {
     setLessons(null);
@@ -63,18 +67,63 @@ export function LessonsList({ status }: Props) {
       {queued.length > 0 && (
         <>
           <h2 className="list-heading list-heading-muted">Coming soon</h2>
-          {queued.map((l) => (
-            <div key={l.id} className="card card-queued">
-              <div className="card-meta">
-                <span className="topic">{l.topic.split('/').slice(-1)[0]}</span>
-                <span className="next-badge">Queued</span>
-              </div>
-              <h3 className="card-title">{l.title}</h3>
-              {l.source_event?.summary && (
-                <p className="card-source muted">{l.source_event.summary}</p>
-              )}
-            </div>
-          ))}
+          {queued.map((l) => {
+            const state = generating[l.id];
+            const busy = state === 'busy';
+            const err = typeof state === 'object' ? state.error : null;
+            const clickable = isOwner && !busy;
+            return (
+              <button
+                key={l.id}
+                type="button"
+                className="card card-queued"
+                disabled={!clickable}
+                onClick={() => {
+                  if (!clickable) return;
+                  setGenerating((g) => ({ ...g, [l.id]: 'busy' }));
+                  generateLessonNow(
+                    {
+                      title: l.title,
+                      topic: l.topic,
+                      language: l.language ?? lang,
+                      rationale: l.source_event?.summary,
+                      source_lesson_id: l.source_event?.ref,
+                      depth: l.depth,
+                    },
+                    repoId,
+                  )
+                    .then((generated) => navigate(`/lesson/${generated.id}`))
+                    .catch((e: Error) => {
+                      setGenerating((g) => ({
+                        ...g,
+                        [l.id]: { error: e.message },
+                      }));
+                    });
+                }}
+              >
+                <div className="card-meta">
+                  <span className="topic">{l.topic.split('/').slice(-1)[0]}</span>
+                  <span className="next-badge">
+                    {busy ? (
+                      <>
+                        <span className="spinner" aria-hidden="true" /> Generating…
+                      </>
+                    ) : (
+                      'Queued'
+                    )}
+                  </span>
+                </div>
+                <h3 className="card-title">{l.title}</h3>
+                {l.source_event?.summary && (
+                  <p className="card-source muted">{l.source_event.summary}</p>
+                )}
+                {isOwner && !busy && !err && (
+                  <p className="card-hint muted small">Tap to generate now (~10s)</p>
+                )}
+                {err && <p className="error-inline">Couldn’t generate: {err}</p>}
+              </button>
+            );
+          })}
         </>
       )}
     </div>

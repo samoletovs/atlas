@@ -761,13 +761,37 @@ main {
   margin-top: 2rem;
 }
 .card-queued {
-  opacity: 0.7;
-  cursor: default;
+  opacity: 0.85;
   border-style: dashed;
+  /* When rendered as a <button>, reset native button styles to match .card */
+  background: var(--bg-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  display: block;
 }
-.card-queued:hover {
+.card-queued:not(:disabled) {
+  cursor: pointer;
+}
+.card-queued:not(:disabled):hover {
+  opacity: 1;
+  border-color: var(--accent);
+}
+.card-queued:disabled {
+  cursor: progress;
   transform: none;
   box-shadow: none;
+}
+.card-queued .next-badge .spinner {
+  width: 0.7em;
+  height: 0.7em;
+  margin-right: 0.25rem;
+  vertical-align: -0.1em;
+}
+.card-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
 }
 
 .reader-actions {
