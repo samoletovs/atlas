@@ -180,6 +180,19 @@ export interface AtlasUserPreferences {
   updatedAt?: string;
 }
 
+/**
+ * Best-effort per-day usage counters tracked directly on the user doc.
+ * Cheaper than a dedicated container for low-cardinality counters like
+ * follow-up chat turns. `date` is the UTC YYYY-MM-DD key — when it rolls
+ * over the counter resets implicitly.
+ */
+export interface AtlasUserUsage {
+  /** UTC YYYY-MM-DD the current counters apply to. */
+  date?: string;
+  /** Number of /api/lessons/{id}/ask turns spent today. */
+  asks?: number;
+}
+
 export interface AtlasUser {
   id: string;            // same as userId (GitHub login for now)
   userId: string;        // partition key
@@ -193,5 +206,7 @@ export interface AtlasUser {
   };
   /** P5: cross-device theme/lang sync. */
   preferences?: AtlasUserPreferences;
+  /** Per-day soft-quota counters (asks, etc.). */
+  usage?: AtlasUserUsage;
   createdAt: string;
 }

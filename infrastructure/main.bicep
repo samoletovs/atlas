@@ -21,6 +21,26 @@ param foundryAoaiEndpoint string = 'https://foundrylab-aiservices.cognitiveservi
 @description('Azure OpenAI deployment (model alias) used by the lesson-generation agent.')
 param foundryDeployment string = 'gpt-4o-mini'
 
+@description('GitHub OAuth App client ID used by the SWA login flow. Optional — pass empty to skip and set it manually via az staticwebapp appsettings set. When set, redeploys keep it in place.')
+@secure()
+param githubClientId string = ''
+
+@description('GitHub OAuth App client secret. Optional — pass empty to skip. SWA appsettings PUT semantics replace the entire collection, so EVERY secret should be passed on every redeploy or wired through Key Vault.')
+@secure()
+param githubClientSecret string = ''
+
+@description('Service principal application (client) ID used by the Functions runtime to call Azure OpenAI via DefaultAzureCredential.')
+@secure()
+param azureClientId string = ''
+
+@description('Service principal client secret.')
+@secure()
+param azureClientSecret string = ''
+
+@description('Service principal tenant ID.')
+@secure()
+param azureTenantId string = ''
+
 @description('Common resource tags')
 param tags object = {
   project: 'atlas'
@@ -255,21 +275,34 @@ resource swa 'Microsoft.Web/staticSites@2024-04-01' = {
 }
 
 // SWA app settings — backend Functions read these
-// NOTE: secret settings (GITHUB_CLIENT_*, AZURE_CLIENT_*) are set manually after
-// bicep runs — they are NOT declared here so a redeploy doesn't wipe them via
-// the SWA appsettings PUT semantics.
+// NOTE: SWA `appsettings` is a PUT-replace collection. Every secret MUST be
+// passed on every redeploy or it will be wiped. Pass `githubClientId`,
+// `githubClientSecret`, `azureClientId`, `azureClientSecret`, `azureTenantId`
+// at deploy time (e.g. via main.parameters.json + Key Vault references in CI)
+// or be prepared to re-run `az staticwebapp appsettings set` post-deploy.
+//
+// If a secret param is left empty the corresponding setting is omitted, so
+// the previously-set value is also wiped — there is no "merge". Default to
+// passing empty strings only in non-prod environments.
 resource swaSettings 'Microsoft.Web/staticSites/config@2024-04-01' = {
   parent: swa
   name: 'appsettings'
-  properties: {
-    COSMOS_ENDPOINT: cosmos.properties.documentEndpoint
-    COSMOS_DATABASE: 'atlas'
-    APPLICATIONINSIGHTS_CONNECTION_STRING: appInsights.properties.ConnectionString
-    NODE_ENV: 'production'
-    ATLAS_USER_ID: 'sam'
-    FOUNDRY_AOAI_ENDPOINT: foundryAoaiEndpoint
-    FOUNDRY_DEPLOYMENT: foundryDeployment
-  }
+  properties: union(
+    {
+      COSMOS_ENDPOINT: cosmos.properties.documentEndpoint
+      COSMOS_DATABASE: 'atlas'
+      APPLICATIONINSIGHTS_CONNECTION_STRING: appInsights.properties.ConnectionString
+      NODE_ENV: 'production'
+      ATLAS_USER_ID: 'sam'
+      FOUNDRY_AOAI_ENDPOINT: foundryAoaiEndpoint
+      FOUNDRY_DEPLOYMENT: foundryDeployment
+    },
+    empty(githubClientId) ? {} : { GITHUB_CLIENT_ID: githubClientId },
+    empty(githubClientSecret) ? {} : { GITHUB_CLIENT_SECRET: githubClientSecret },
+    empty(azureClientId) ? {} : { AZURE_CLIENT_ID: azureClientId },
+    empty(azureClientSecret) ? {} : { AZURE_CLIENT_SECRET: azureClientSecret },
+    empty(azureTenantId) ? {} : { AZURE_TENANT_ID: azureTenantId }
+  )
 }
 
 // ---------------------------------------------------------------------------
