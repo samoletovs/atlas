@@ -8,7 +8,7 @@
 
 ## What it does
 
-Watches your build activity (`samoletovs/*` GitHub repos: commits, READMEs, AGENTS.md, `.github/reports/`), generates a prioritized backlog of foundational lessons (300–900 words, phone-readable), tracks what's been covered, and on quiet days proposes lessons autonomously from your tech stack and unfilled foundational areas.
+Watches your build activity on any GitHub repo you connect (commits, READMEs, AGENTS.md, `.github/reports/`), generates a prioritized backlog of foundational lessons (300–900 words, phone-readable), tracks what's been covered, and on quiet days proposes lessons autonomously from your tech stack and unfilled foundational areas.
 
 See [docs/VISION.md](docs/VISION.md) for the full vision.
 

@@ -13,9 +13,11 @@ import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
 import { Admin } from './pages/Admin';
 import { AddRepo } from './pages/AddRepo';
+import { TopicAtlas } from './pages/TopicAtlas';
 import {
   fetchUser,
   fetchMe,
+  updatePreferences,
   AllowedRepo,
   AtlasMe,
   AtlasQuota,
@@ -24,12 +26,33 @@ import {
 } from './lib/api';
 
 type Lang = 'en' | 'ru';
+type Theme = 'dark' | 'light';
+
 const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({
   lang: 'en',
   setLang: () => {},
 });
 export function useLang() {
   return useContext(LangContext);
+}
+
+const ThemeContext = createContext<{ theme: Theme; toggle: () => void }>({
+  theme: 'dark',
+  toggle: () => {},
+});
+export function useTheme() {
+  return useContext(ThemeContext);
+}
+
+function readSavedTheme(): Theme {
+  const saved = localStorage.getItem('atlas-theme');
+  if (saved === 'dark' || saved === 'light') return saved;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function readSavedLang(): Lang {
+  const saved = localStorage.getItem('atlas-lang');
+  return saved === 'ru' ? 'ru' : 'en';
 }
 
 interface RepoContextValue {
@@ -61,21 +84,6 @@ export function useMe() {
   return useContext(MeContext);
 }
 
-function useTheme() {
-  const [dark, setDark] = useState(() => {
-    const saved = localStorage.getItem('atlas-theme');
-    if (saved) return saved === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    localStorage.setItem('atlas-theme', dark ? 'dark' : 'light');
-  }, [dark]);
-
-  return { dark, toggle: () => setDark((d) => !d) };
-}
-
 /**
  * Profile dropdown — shows the GitHub login as the trigger, opens a menu
  * with everything that doesn't need to be on the topbar all the time:
@@ -86,7 +94,7 @@ function useTheme() {
 function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
   const [open, setOpen] = useState(false);
   const { lang, setLang } = useLang();
-  const { dark, toggle: toggleTheme } = useTheme();
+  const { theme, toggle: toggleTheme } = useTheme();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -145,7 +153,7 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
           </button>
           <button type="button" role="menuitem" onClick={toggleTheme}>
             <span>Theme</span>
-            <span className="user-menu-value">{dark ? 'Dark' : 'Light'}</span>
+            <span className="user-menu-value">{theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
           <div className="user-menu-sep" />
           <a role="menuitem" href="/.auth/logout">
@@ -232,12 +240,47 @@ type AppState =
 
 export function App() {
   const [state, setState] = useState<AppState>({ kind: 'loading' });
-  const [lang, setLang] = useState<Lang>(() => {
-    return (localStorage.getItem('atlas-lang') as Lang) || 'en';
-  });
+  const [lang, setLangState] = useState<Lang>(readSavedLang);
+  const [theme, setThemeState] = useState<Theme>(readSavedTheme);
   const [repoId, setRepoId] = useState<string>(() => {
     return localStorage.getItem('atlas-repo') || 'samoletovs__nauroLabs';
   });
+
+  // Tracks whether the server has been told about the latest local choice,
+  // so we don't PATCH on every render — only when the user actually toggles.
+  const serverPrefsRef = useRef<{ theme?: Theme; lang?: Lang }>({});
+
+  const setLang = useCallback((next: Lang) => {
+    setLangState(next);
+    // Fire-and-forget — failure just means cross-device sync skipped this turn.
+    if (serverPrefsRef.current.lang !== next) {
+      serverPrefsRef.current.lang = next;
+      updatePreferences({ lang: next }).catch((err) => {
+        console.warn('preferences sync (lang) failed', err);
+      });
+    }
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => {
+      const next: Theme = prev === 'dark' ? 'light' : 'dark';
+      if (serverPrefsRef.current.theme !== next) {
+        serverPrefsRef.current.theme = next;
+        updatePreferences({ theme: next }).catch((err) => {
+          console.warn('preferences sync (theme) failed', err);
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  // Apply theme to the document on every change and persist locally for
+  // first-paint on the next visit. The inline script in index.html reads
+  // this same key before React mounts.
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('atlas-theme', theme);
+  }, [theme]);
 
   const refreshMe = useCallback(async () => {
     const me = await fetchMe();
@@ -267,6 +310,18 @@ export function App() {
           });
           return;
         }
+        // Apply server-synced preferences (theme/lang). The server is the
+        // source of truth once it has a value — local toggles afterwards
+        // re-PATCH back to the server.
+        const prefs = me.preferences ?? {};
+        if (prefs.theme && prefs.theme !== theme) {
+          setThemeState(prefs.theme);
+        }
+        if (prefs.lang && prefs.lang !== lang) {
+          setLangState(prefs.lang);
+        }
+        serverPrefsRef.current = { theme: prefs.theme, lang: prefs.lang };
+
         // Empty allowedRepos is no longer "forbidden" — they can add their
         // own repo via /repos/new. We still go to ready, RepoContext just
         // has an empty list and `role: null`.
@@ -285,7 +340,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-    // We deliberately ignore repoId here; this effect runs once at mount.
+    // We deliberately ignore repoId/theme/lang here; this effect runs once at mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -317,15 +372,19 @@ export function App() {
     return <ForbiddenScreen login={state.login} />;
   }
 
+  const themeCtxValue = { theme, toggle: toggleTheme };
+
   return (
-    <AuthenticatedShell
-      me={state.me}
-      lang={lang}
-      setLang={setLang}
-      repoId={repoId}
-      setRepoId={setRepoId}
-      refreshMe={refreshMe}
-    />
+    <ThemeContext.Provider value={themeCtxValue}>
+      <AuthenticatedShell
+        me={state.me}
+        lang={lang}
+        setLang={setLang}
+        repoId={repoId}
+        setRepoId={setRepoId}
+        refreshMe={refreshMe}
+      />
+    </ThemeContext.Provider>
   );
 }
 
@@ -374,6 +433,7 @@ function AuthenticatedShell({
                 </NavLink>
                 <NavLink to="/saved">Saved</NavLink>
                 <NavLink to="/read">Read</NavLink>
+                {hasAnyRepo && <NavLink to="/atlas">Atlas</NavLink>}
               </nav>
               <div className="topbar-right">
                 <QuotaBadge quota={me.quota} />
@@ -393,6 +453,7 @@ function AuthenticatedShell({
                 />
                 <Route path="/saved" element={<LessonsList status="saved" />} />
                 <Route path="/read" element={<LessonsList status="read" />} />
+                <Route path="/atlas" element={<TopicAtlas />} />
                 <Route path="/lesson/:id" element={<LessonReader />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/repos/new" element={<AddRepo />} />

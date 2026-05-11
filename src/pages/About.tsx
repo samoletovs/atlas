@@ -4,19 +4,22 @@ export function About() {
       <h2>About atlas</h2>
       <p>
         atlas is a personal teacher that watches what you build with AI tooling and
-        turns it into phone-readable lessons. It runs as a NauroLabs experiment, single
-        user (you).
+        turns it into phone-readable lessons. It runs as a NauroLabs experiment.
       </p>
       <h3>How it works</h3>
       <p>
-        A daily collector reads your <code>samoletovs/*</code> GitHub repos — commits,
-        READMEs, AGENTS.md, reports — and feeds activity events to a Microsoft Foundry
-        agent. The agent maintains a knowledge taxonomy that grows from your work,
-        proposes lesson backlog items, prioritizes them, and writes 300–900 word
-        lessons grounded in both your activity and authoritative sources (Microsoft
-        Learn, web).
+        You connect any public GitHub repo you own (or one shared with you), and atlas
+        reads its README, file tree, recent commits and project docs. The signal is fed
+        to a Microsoft Foundry agent that maintains a knowledge taxonomy, proposes
+        lesson backlog items, prioritises them, and writes 300–900 word lessons
+        grounded in both your activity and authoritative sources (Microsoft Learn, web).
       </p>
-      <h3>Phase 0 status (today)</h3>
+      <p className="muted">
+        Sign in with GitHub, hit <strong>+ Add repo</strong> in the profile menu, and
+        paste a repo URL. atlas writes a short starter lesson within seconds and keeps
+        topping up your unread queue from there.
+      </p>
+      <h3>What's live today</h3>
       <ul>
         <li>Cosmos DB live in Sweden Central</li>
         <li>Foundry agent <code>atlas-teacher</code> generates lessons</li>
@@ -27,11 +30,20 @@ export function About() {
           4 / 8 / 12 / 24 hours
         </li>
         <li>PWA reader with offline caching</li>
+        <li>
+          <strong>Topic atlas</strong> — a graph view of every topic atlas has covered
+          for this repo, with edges between topics that suggest each other
+        </li>
+        <li>
+          <strong>Ask-more chat</strong> — follow-up Q&amp;A on any lesson, grounded in
+          its body and citations
+        </li>
+        <li>Theme and language preferences sync across your devices</li>
       </ul>
       <h3>Coming up</h3>
       <ul>
-        <li>Topic atlas graph view</li>
-        <li>Ask-more chat</li>
+        <li>Saved highlights and notes per lesson</li>
+        <li>Private repos via per-user GitHub tokens</li>
       </ul>
     </article>
   );

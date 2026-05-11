@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Lesson, getLesson, listLessons, generateLessonNow, updateLessonState } from '../lib/api';
+import {
+  Lesson,
+  getLesson,
+  listLessons,
+  generateLessonNow,
+  updateLessonState,
+  askLesson,
+  AskChatTurn,
+} from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
 import { useLang, useRepo } from '../App';
 
@@ -28,10 +36,22 @@ export function LessonReader() {
   const [library, setLibrary] = useState<Lesson[]>([]);
   const [suggestionStates, setSuggestionStates] = useState<Record<number, SuggestionState>>({});
 
+  // Ask-more chat: stateless across reloads (history kept only in React state).
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatTurns, setChatTurns] = useState<AskChatTurn[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!id) return;
     setLesson(null);
     setSuggestionStates({});
+    setChatOpen(false);
+    setChatTurns([]);
+    setChatDraft('');
+    setChatError(null);
     getLesson(id, repoId)
       .then(setLesson)
       .catch((e: Error) => setError(e.message));
@@ -165,6 +185,41 @@ export function LessonReader() {
     }
   }
 
+  async function handleAsk(e: React.FormEvent) {
+    e.preventDefault();
+    if (!lesson) return;
+    const question = chatDraft.trim();
+    if (!question || chatBusy) return;
+
+    setChatError(null);
+    setChatBusy(true);
+    const optimistic: AskChatTurn[] = [...chatTurns, { role: 'user', content: question }];
+    setChatTurns(optimistic);
+    setChatDraft('');
+
+    try {
+      // Send the history WITHOUT the just-appended question — the API
+      // appends it itself on top of the system prompt + history.
+      const result = await askLesson(lesson.id, question, chatTurns, repoId);
+      setChatTurns([...optimistic, { role: 'assistant', content: result.answer }]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setChatError(msg);
+      // Roll back the optimistic user message so the user can retry / edit.
+      setChatTurns(chatTurns);
+      setChatDraft(question);
+    } finally {
+      setChatBusy(false);
+    }
+  }
+
+  // Keep the latest answer in view when new messages arrive.
+  useEffect(() => {
+    if (chatOpen && chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [chatOpen, chatTurns, chatBusy]);
+
   if (error) return <div className="error">Couldn’t load lesson: {error}</div>;
   if (!lesson) return <div className="loading">Loading…</div>;
 
@@ -285,6 +340,79 @@ export function LessonReader() {
           </ul>
         </section>
       )}
+
+      <section className={`ask-more${chatOpen ? ' open' : ''}`}>
+        {!chatOpen ? (
+          <button
+            type="button"
+            className="ask-more-toggle"
+            onClick={() => setChatOpen(true)}
+          >
+            Ask a follow-up question →
+          </button>
+        ) : (
+          <>
+            <div className="ask-more-head">
+              <h4>Ask atlas</h4>
+              <button
+                type="button"
+                className="btn-link ask-more-close"
+                onClick={() => setChatOpen(false)}
+                aria-label="Close chat"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="muted small ask-more-hint">
+              Grounded in this lesson. Keep it short — answers stay under 200 words.
+            </p>
+            <div className="ask-more-log" aria-live="polite">
+              {chatTurns.length === 0 && !chatBusy && (
+                <p className="muted small ask-more-empty">
+                  Ask anything that wasn’t clear, or push deeper on a point.
+                </p>
+              )}
+              {chatTurns.map((t, i) => (
+                <div key={i} className={`ask-bubble ask-bubble-${t.role}`}>
+                  {t.content.split('\n').map((line, j) => (
+                    <p key={j}>{line || '\u00a0'}</p>
+                  ))}
+                </div>
+              ))}
+              {chatBusy && (
+                <div className="ask-bubble ask-bubble-assistant ask-bubble-pending">
+                  <span className="spinner" aria-hidden="true" /> thinking…
+                </div>
+              )}
+              <div ref={chatBottomRef} />
+            </div>
+            {chatError && <div className="form-error">{chatError}</div>}
+            <form onSubmit={handleAsk} className="ask-more-form">
+              <textarea
+                value={chatDraft}
+                onChange={(e) => setChatDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleAsk(e as unknown as React.FormEvent);
+                  }
+                }}
+                placeholder="What would you like to clarify?"
+                rows={2}
+                maxLength={1000}
+                disabled={chatBusy}
+              />
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={chatBusy || chatDraft.trim().length === 0}
+              >
+                {chatBusy ? 'Asking…' : 'Ask'}
+              </button>
+            </form>
+          </>
+        )}
+      </section>
 
       <footer className="reader-actions">
         <button className="btn-primary" onClick={handleMarkRead}>

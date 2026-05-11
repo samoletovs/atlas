@@ -21,6 +21,7 @@ import {
   reposContainer,
   repoSharesContainer,
   AtlasUser,
+  AtlasUserPreferences,
   Repo,
   RepoShare,
 } from '../shared/cosmos.js';
@@ -49,6 +50,8 @@ interface MeResponse {
   allowedRepos: AllowedRepoEntry[];
   /** P3: today's generation usage. null limit == uncapped. */
   quota: QuotaState;
+  /** P5: server-synced UI preferences. Empty object when never saved. */
+  preferences: AtlasUserPreferences;
 }
 
 /** Fetch a GitHub user's numeric id via the unauthenticated public API. */
@@ -174,6 +177,7 @@ export async function getMe(
     createdAt: user.createdAt,
     allowedRepos,
     quota: await getQuotaState(userId),
+    preferences: user.preferences ?? {},
   };
 
   return { status: 200, jsonBody: response };
