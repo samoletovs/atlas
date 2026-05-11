@@ -107,10 +107,57 @@ body {
 }
 
 .brand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
   font-family: var(--font-serif);
   font-size: 1.4rem;
-  color: var(--accent);
   letter-spacing: -0.01em;
+  flex-shrink: 0;
+}
+.brand-name {
+  color: var(--accent);
+  text-decoration: none;
+}
+.brand-name:hover {
+  opacity: 0.85;
+}
+.brand-sep {
+  color: var(--fg-subtle);
+  font-weight: 300;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+.brand-repo {
+  font-family: var(--font-sans, inherit);
+  font-size: 0.95rem;
+  color: var(--fg-muted);
+  letter-spacing: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brand-repo-select {
+  background: transparent;
+  border: none;
+  padding: 0 1.1rem 0 0;
+  cursor: pointer;
+  line-height: 1;
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 6px) 0.5em, calc(100% - 2px) 0.5em;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+.brand-repo-select:hover {
+  color: var(--fg);
+}
+.brand-repo-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 .topbar nav {
@@ -198,6 +245,8 @@ body {
 }
 
 .repo-picker {
+  /* Legacy class kept for any non-topbar callers. Now unused in the topbar
+     — the repo segment lives inside .brand as part of the path label. */
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -922,6 +971,9 @@ main {
 
 @media (max-width: 720px) {
   .user-menu-name { display: none; }
+  /* On narrow viewports the path label gets clipped — show just the brand. */
+  .brand-sep,
+  .brand-repo { display: none; }
 }
 
 @media (max-width: 600px) {

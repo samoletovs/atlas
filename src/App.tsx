@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink } from 'react-router-dom';
+import { Routes, Route, NavLink, Link } from 'react-router-dom';
 import {
   createContext,
   useCallback,
@@ -157,24 +157,48 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
   );
 }
 
-function RepoPicker() {
+/**
+ * GitHub-style brand path: `atlas / {currentRepo}`. The first segment is
+ * always a link home; the second segment shows the current repo (plain
+ * text with one repo, a small inline <select> with multiple repos, hidden
+ * entirely when no repo is connected yet).
+ */
+function BrandPath() {
   const { repoId, setRepoId, allowedRepos } = useRepo();
-  // With one (or zero) repo there is no choice to make — hide the control entirely.
-  // The dropdown reappears automatically as soon as a second repo is connected.
-  if (allowedRepos.length <= 1) return null;
+  const current = allowedRepos.find((r) => r.repoId === repoId) ?? allowedRepos[0];
+
   return (
-    <select
-      className="repo-picker"
-      value={repoId}
-      onChange={(e) => setRepoId(e.target.value)}
-      title="Switch repo"
-    >
-      {allowedRepos.map((r) => (
-        <option key={r.repoId} value={r.repoId}>
-          {r.ownerId}/{r.name}
-        </option>
-      ))}
-    </select>
+    <div className="brand">
+      <Link to="/" className="brand-name">
+        atlas
+      </Link>
+      {current && (
+        <>
+          <span className="brand-sep" aria-hidden>
+            /
+          </span>
+          {allowedRepos.length === 1 ? (
+            <span className="brand-repo" title={current.repoId}>
+              {current.name}
+            </span>
+          ) : (
+            <select
+              className="brand-repo brand-repo-select"
+              value={repoId}
+              onChange={(e) => setRepoId(e.target.value)}
+              aria-label="Switch repo"
+              title="Switch repo"
+            >
+              {allowedRepos.map((r) => (
+                <option key={r.repoId} value={r.repoId}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -343,7 +367,7 @@ function AuthenticatedShell({
         <MeContext.Provider value={meCtxValue}>
           <div className="app-shell">
             <header className="topbar">
-              <div className="brand">atlas</div>
+              <BrandPath />
               <nav>
                 <NavLink to="/" end>
                   Next up
@@ -352,7 +376,6 @@ function AuthenticatedShell({
                 <NavLink to="/read">Read</NavLink>
               </nav>
               <div className="topbar-right">
-                {hasAnyRepo && <RepoPicker />}
                 <QuotaBadge quota={me.quota} />
                 <UserMenu
                   login={me.githubLogin}
