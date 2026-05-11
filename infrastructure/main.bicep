@@ -41,6 +41,10 @@ param azureClientSecret string = ''
 @secure()
 param azureTenantId string = ''
 
+@description('Master key (32 bytes, base64 or hex) used to AES-256-GCM-encrypt per-user GitHub PATs stored in Cosmos. Optional — pass empty to skip; users without a master key configured will be unable to save tokens (the API returns 503). Generate with `openssl rand -base64 32`. Rotate by re-setting; old ciphertext becomes unreadable.')
+@secure()
+param githubTokenMasterKey string = ''
+
 @description('Common resource tags')
 param tags object = {
   project: 'atlas'
@@ -301,7 +305,8 @@ resource swaSettings 'Microsoft.Web/staticSites/config@2024-04-01' = {
     empty(githubClientSecret) ? {} : { GITHUB_CLIENT_SECRET: githubClientSecret },
     empty(azureClientId) ? {} : { AZURE_CLIENT_ID: azureClientId },
     empty(azureClientSecret) ? {} : { AZURE_CLIENT_SECRET: azureClientSecret },
-    empty(azureTenantId) ? {} : { AZURE_TENANT_ID: azureTenantId }
+    empty(azureTenantId) ? {} : { AZURE_TENANT_ID: azureTenantId },
+    empty(githubTokenMasterKey) ? {} : { ATLAS_GITHUB_TOKEN_MASTER_KEY: githubTokenMasterKey }
   )
 }
 

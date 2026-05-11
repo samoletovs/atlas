@@ -52,6 +52,12 @@ interface MeResponse {
   quota: QuotaState;
   /** P5: server-synced UI preferences. Empty object when never saved. */
   preferences: AtlasUserPreferences;
+  /**
+   * GitHub PAT status. `null` means none on file; presence means the user
+   * has uploaded a token they can clear from Settings. The plaintext token
+   * is never returned.
+   */
+  githubToken: { scopes: string[]; addedAt: string; lastUsedAt?: string } | null;
 }
 
 /** Fetch a GitHub user's numeric id via the unauthenticated public API. */
@@ -178,6 +184,13 @@ export async function getMe(
     allowedRepos,
     quota: await getQuotaState(userId),
     preferences: user.preferences ?? {},
+    githubToken: user.githubToken
+      ? {
+          scopes: user.githubToken.scopes,
+          addedAt: user.githubToken.addedAt,
+          lastUsedAt: user.githubToken.lastUsedAt,
+        }
+      : null,
   };
 
   return { status: 200, jsonBody: response };

@@ -13,6 +13,7 @@ import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
 import { Admin } from './pages/Admin';
 import { AddRepo } from './pages/AddRepo';
+import { Settings } from './pages/Settings';
 import { TopicAtlas } from './pages/TopicAtlas';
 import {
   fetchUser,
@@ -133,6 +134,9 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
         <div className="user-menu-popover" role="menu">
           <NavLink to="/repos/new" role="menuitem" onClick={close}>
             + Add repo
+          </NavLink>
+          <NavLink to="/settings" role="menuitem" onClick={close}>
+            Settings
           </NavLink>
           {isOwner && (
             <NavLink to="/admin" role="menuitem" onClick={close}>
@@ -457,6 +461,7 @@ function AuthenticatedShell({
                 <Route path="/lesson/:id" element={<LessonReader />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/repos/new" element={<AddRepo />} />
+                <Route path="/settings" element={<Settings />} />
                 <Route path="/about" element={<About />} />
               </Routes>
             </main>
@@ -489,12 +494,17 @@ function NoRepoLanding() {
         atlas teaches you what's in a GitHub repo, one bite-sized lesson at a time.
       </p>
       <p className="muted">
-        Add a public GitHub repo to get started — atlas will read its README, code, and
-        recent activity to generate lessons tailored to it.
+        Connect your GitHub account to pick repos you want atlas to learn from — or
+        paste a public repo URL to try it out without signing in further.
       </p>
-      <NavLink to="/repos/new" className="btn-primary">
-        + Add a GitHub repo
-      </NavLink>
+      <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+        <NavLink to="/settings" className="btn-primary">
+          Connect GitHub
+        </NavLink>
+        <NavLink to="/repos/new" className="btn-secondary">
+          + Add a public repo
+        </NavLink>
+      </div>
     </div>
   );
 }

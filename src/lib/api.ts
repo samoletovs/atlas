@@ -47,6 +47,16 @@ export interface AtlasPreferences {
   updatedAt?: string;
 }
 
+/**
+ * Public-facing summary of the user's stored GitHub PAT. `null` when none
+ * is on file. The plaintext token is never returned by the API.
+ */
+export interface GithubTokenInfo {
+  scopes: string[];
+  addedAt: string;
+  lastUsedAt?: string;
+}
+
 export interface AtlasMe {
   userId: string;
   githubLogin: string;
@@ -55,6 +65,7 @@ export interface AtlasMe {
   allowedRepos: AllowedRepo[];
   quota: AtlasQuota;
   preferences: AtlasPreferences;
+  githubToken: GithubTokenInfo | null;
 }
 
 export interface Lesson {
@@ -376,4 +387,83 @@ export async function askLesson(
     throw new Error(`askLesson failed: ${res.status}${detail}`);
   }
   return (await res.json()) as AskResult;
+}
+
+// ---------- GitHub PAT management (Settings page) ----------
+
+/**
+ * Upload a GitHub personal access token. Validated server-side (must belong
+ * to the same GitHub user that's signed in). Plaintext stays in-memory only;
+ * the server encrypts it before persisting.
+ */
+export async function putGithubToken(token: string): Promise<GithubTokenInfo> {
+  const res = await fetch('/api/me/github-token', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`putGithubToken failed: ${res.status}${detail}`);
+  }
+  const data = (await res.json()) as { githubToken: GithubTokenInfo };
+  return data.githubToken;
+}
+
+/** Forget the stored token. Returns true if a token was actually cleared. */
+export async function deleteGithubToken(): Promise<boolean> {
+  const res = await fetch('/api/me/github-token', { method: 'DELETE' });
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`deleteGithubToken failed: ${res.status}`);
+  }
+  return true;
+}
+
+// ---------- Browse-and-pick repos (Settings → Add repos) ----------
+
+export interface GithubRepoListItem {
+  fullName: string;
+  owner: string;
+  repo: string;
+  description: string | null;
+  htmlUrl: string;
+  isPrivate: boolean;
+  isFork: boolean;
+  isArchived: boolean;
+  defaultBranch: string;
+  language: string | null;
+  stargazersCount: number;
+  pushedAt: string | null;
+  /** True if this repo already exists in atlas under any owner. */
+  inAtlas: boolean;
+  /** True if it exists in atlas but is owned by someone else (you'd need an invite). */
+  ownedByOther: boolean;
+}
+
+/**
+ * List all repos the user can see on GitHub via their stored token. The
+ * server merges in atlas-state so the UI can grey out already-added entries.
+ * Returns null when the user has no token yet.
+ */
+export async function listMyGithubRepos(): Promise<GithubRepoListItem[] | null> {
+  const res = await fetch('/api/github/repos');
+  if (res.status === 412) return null;
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`listMyGithubRepos failed: ${res.status}${detail}`);
+  }
+  const data = (await res.json()) as { repos: GithubRepoListItem[] };
+  return data.repos;
 }

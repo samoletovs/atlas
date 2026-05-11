@@ -22,8 +22,10 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import {
   reposContainer,
   lessonsV2Container,
+  usersContainer,
   Repo,
   LessonV2,
+  AtlasUser,
   AUTO_GEN_DEFAULTS,
 } from '../shared/cosmos.js';
 import { getPrincipal, isAuthenticated } from '../shared/auth.js';
@@ -32,6 +34,7 @@ import {
   getGithubTokenFromRequest,
   fetchRepoMetadata,
 } from '../shared/github.js';
+import { decryptSecret } from '../shared/crypto.js';
 
 function slugify(s: string): string {
   return s
@@ -98,7 +101,30 @@ export async function addRepo(
   }
 
   // Validate via GitHub API.
-  const ghToken = getGithubTokenFromRequest(req);
+  // Token resolution order:
+  //   1. SWA-injected header (only when SWA Standard + custom OAuth app is in use)
+  //   2. User's stored PAT on the user doc
+  //   3. Unauthenticated (60 req/h shared pool — public repos only)
+  let ghToken = getGithubTokenFromRequest(req);
+  if (!ghToken) {
+    try {
+      const { resource: u } = await usersContainer()
+        .item(userId, userId)
+        .read<AtlasUser>();
+      if (u?.githubToken) {
+        try {
+          ghToken = decryptSecret(u.githubToken.cipher);
+        } catch (e) {
+          ctx.log(
+            `addRepo: token decrypt failed for ${userId}: ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+    } catch (e: unknown) {
+      if (e instanceof Error && (e as { code?: number }).code !== 404) throw e;
+    }
+  }
+
   const metaRes = await fetchRepoMetadata(ghOwner, ghRepo, ghToken);
   if (!metaRes.ok) {
     if (metaRes.status === 404) {
@@ -106,8 +132,8 @@ export async function addRepo(
         status: 404,
         jsonBody: {
           error: ghToken
-            ? `${ghOwner}/${ghRepo} doesn't exist or you don't have access.`
-            : `${ghOwner}/${ghRepo} not found. Private repos aren't supported on this tier yet.`,
+            ? `${ghOwner}/${ghRepo} doesn't exist or your GitHub token can't see it.`
+            : `${ghOwner}/${ghRepo} not found. If it's private, add a GitHub token in Settings first.`,
         },
       };
     }
@@ -129,7 +155,9 @@ export async function addRepo(
     // be explicit if GitHub returned a private repo with anon auth somehow.
     return {
       status: 403,
-      jsonBody: { error: 'Private repos require an authenticated GitHub session.' },
+      jsonBody: {
+        error: 'Private repos require a GitHub token. Add one in Settings first.',
+      },
     };
   }
 
