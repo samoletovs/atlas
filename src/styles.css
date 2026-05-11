@@ -216,12 +216,6 @@ body {
 .repo-picker:hover {
   border-color: var(--fg-muted);
 }
-.repo-picker-static {
-  cursor: default;
-}
-.repo-picker-static:hover {
-  border-color: var(--border);
-}
 
 /* ============================================================ */
 /* User menu (profile dropdown)                                 */
