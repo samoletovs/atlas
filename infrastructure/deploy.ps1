@@ -105,6 +105,7 @@ $lines = @(
   ""
   "# Reused from foundryLab"
   "FOUNDRY_PROJECT_ENDPOINT=https://foundrylab-aiservices.services.ai.azure.com/api/projects/foundrylab"
+  "FOUNDRY_AOAI_ENDPOINT=https://foundrylab-aiservices.cognitiveservices.azure.com/"
   "FOUNDRY_DEPLOYMENT=gpt-4o-mini"
   ""
   "ATLAS_USER_ID=sam"

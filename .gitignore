@@ -51,3 +51,5 @@ logs/
 
 # Local-only personal-info pattern overrides
 scripts/.leak-patterns.local.txt
+
+infrastructure/main.json
