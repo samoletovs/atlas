@@ -42,7 +42,8 @@ COSMOS_ENDPOINT = os.environ["COSMOS_ENDPOINT"]
 COSMOS_DATABASE = os.environ.get("COSMOS_DATABASE", "atlas")
 FOUNDRY_PROJECT_ENDPOINT = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
 FOUNDRY_DEPLOYMENT = os.environ.get("FOUNDRY_DEPLOYMENT", "gpt-4o-mini")
-USER_ID = os.environ.get("ATLAS_USER_ID", "sam")
+USER_ID = os.environ.get("ATLAS_USER_ID", "sam")  # legacy v1 schema (seed/enhance modes)
+OWNER_LOGIN = os.environ.get("ATLAS_OWNER_LOGIN", "samoletovs")  # v2 schema (pending mode)
 
 # --- Logging ----------------------------------------------------------------
 logging.basicConfig(
@@ -777,13 +778,20 @@ def run_seed(languages: list[str] | None = None) -> None:
 # --- Pending queue mode -----------------------------------------------------
 
 def fetch_pending_lessons(cosmos: CosmosClient) -> list[dict[str, Any]]:
-    """Return all lessons with status='queued' for the current user."""
-    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
+    """Return all queued lessons in `lessons_v2` owned by OWNER_LOGIN.
+
+    The v2 schema partitions by `/repoId` and identifies the owner via
+    `ownerId` (GitHub login). One owner can have many repos, so we run a
+    cross-partition query scoped to the owner.
+    """
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons_v2")
     items = container.query_items(
-        query="SELECT * FROM c WHERE c.userId = @uid AND c.status = 'queued' ORDER BY c.created_at ASC",
-        parameters=[{"name": "@uid", "value": USER_ID}],
-        enable_cross_partition_query=False,
-        partition_key=USER_ID,
+        query=(
+            "SELECT * FROM c WHERE c.ownerId = @owner AND c.status = 'queued' "
+            "ORDER BY c.created_at ASC"
+        ),
+        parameters=[{"name": "@owner", "value": OWNER_LOGIN}],
+        enable_cross_partition_query=True,
     )
     return list(items)
 
@@ -804,7 +812,7 @@ def run_pending() -> int:
     log.info("Mode: PENDING — draining %d queued lesson(s).", len(pending))
     agents = make_agents_client()
     agent_id = get_or_create_atlas_agent(agents)
-    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
+    container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons_v2")
 
     generated = 0
     for i, doc in enumerate(pending):
@@ -861,6 +869,7 @@ def run_pending() -> int:
         # Keep created_at, but mark when the body landed
         doc["published_at"] = datetime.now(timezone.utc).isoformat()
 
+        # v2 partitions by /repoId — the SDK derives it from body["repoId"].
         container.replace_item(item=doc["id"], body=doc)
         generated += 1
         log.info("    -> published '%s' [%s] (%d words)", doc["title"], lang, len(doc["body"].split()))
