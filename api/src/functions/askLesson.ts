@@ -14,7 +14,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse } from '../shared/auth.js';
-import { checkQuota } from '../shared/quota.js';
+import { consumeAskTurn } from '../shared/quota.js';
 import { getOpenAIClientForUser } from '../shared/openaiClient.js';
 
 interface ChatTurn {
@@ -29,6 +29,8 @@ interface AskBody {
 
 const MAX_QUESTION_CHARS = 1000;
 const MAX_HISTORY_TURNS = 8;
+const MAX_HISTORY_TURN_CHARS = 2000;
+const MAX_HISTORY_TOTAL_CHARS = 12000;
 const MAX_ANSWER_TOKENS = 600;
 
 const ASK_INSTRUCTIONS = `You are atlas — a personal teacher. The reader just finished a
@@ -76,15 +78,17 @@ export async function askLesson(
   const id = req.params.id;
   if (!id) return { status: 400, jsonBody: { error: 'Missing lesson id' } };
 
-  // Soft rate limit reuses the daily generation cap. Cheap chat turns are
-  // billed against the same budget rather than introducing a second counter.
-  const quota = await checkQuota(userId);
+  // Per-user soft rate limit on follow-up chat turns. Atomically bumps a
+  // counter on the user doc so a runaway client can't drain tokens.
+  const quota = await consumeAskTurn(userId);
   if (quota.exceeded) {
     return {
       status: 429,
       jsonBody: {
-        error: `Daily cap reached (${quota.state.used}/${quota.state.limit}). Resets at ${quota.state.resetAt}.`,
-        quota: quota.state,
+        error: `Daily chat cap reached (${quota.used}/${quota.limit}). Resets at ${quota.resetAt}.`,
+        used: quota.used,
+        limit: quota.limit,
+        resetAt: quota.resetAt,
       },
     };
   }
@@ -120,8 +124,10 @@ export async function askLesson(
   }
   if (!lesson) return { status: 404, jsonBody: { error: 'Lesson not found' } };
 
-  // Build chat history. Trim to last N turns and sanitize roles/content.
-  const history: ChatTurn[] = Array.isArray(body.history)
+  // Build chat history. Trim to last N turns, cap each turn's content to
+  // bound input tokens, and reject the request if the total history payload
+  // is still too large after truncation — that signals a misbehaving client.
+  const rawHistory: ChatTurn[] = Array.isArray(body.history)
     ? body.history
         .filter(
           (t): t is ChatTurn =>
@@ -132,6 +138,24 @@ export async function askLesson(
         )
         .slice(-MAX_HISTORY_TURNS)
     : [];
+
+  const history: ChatTurn[] = rawHistory.map((t) => ({
+    role: t.role,
+    content:
+      t.content.length > MAX_HISTORY_TURN_CHARS
+        ? t.content.slice(0, MAX_HISTORY_TURN_CHARS) + '…'
+        : t.content,
+  }));
+
+  const totalHistoryChars = history.reduce((n, t) => n + t.content.length, 0);
+  if (totalHistoryChars > MAX_HISTORY_TOTAL_CHARS) {
+    return {
+      status: 400,
+      jsonBody: {
+        error: `history too large (got ${totalHistoryChars} chars, max ${MAX_HISTORY_TOTAL_CHARS})`,
+      },
+    };
+  }
 
   const { client, deployment } = await getOpenAIClientForUser(userId);
   try {
