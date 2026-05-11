@@ -1063,12 +1063,12 @@ def run_enhance(force: bool = False, dry_run: bool = False, limit: int | None = 
 #   - cosmos `repos` (cross-partition WHERE autoGenerate = true)
 #   - cosmos `lessons_v2` (per-repoId, count published + non-archived)
 #   - cosmos `lessonProgress` (per-userId, count read)
-#   - GitHub commits API (anonymous, or PAT from GITHUB_TOKEN_FOR_ATLAS env)
+#   - GitHub commits API (anonymous, or PAT from ATLAS_GH_TOKEN env)
 # Writes:
 #   - cosmos `lessons_v2` (insert queued stubs)
 #   - cosmos `repos` (update lastRunAt + lastSeenCommitSha)
 
-GITHUB_TOKEN_FOR_ATLAS = os.environ.get("GITHUB_TOKEN_FOR_ATLAS", "")
+ATLAS_GH_TOKEN = os.environ.get("ATLAS_GH_TOKEN", "")
 
 AUTO_GEN_DEFAULTS_INTERVAL = 24
 AUTO_GEN_DEFAULTS_UNREAD_TARGET = 20
@@ -1232,8 +1232,8 @@ def _github_headers() -> dict[str, str]:
         "User-Agent": "atlas-naurolabs",
         "X-GitHub-Api-Version": "2022-11-28",
     }
-    if GITHUB_TOKEN_FOR_ATLAS:
-        headers["Authorization"] = f"Bearer {GITHUB_TOKEN_FOR_ATLAS}"
+    if ATLAS_GH_TOKEN:
+        headers["Authorization"] = f"Bearer {ATLAS_GH_TOKEN}"
     return headers
 
 

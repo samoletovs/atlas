@@ -55,5 +55,5 @@ jobs:
           # Optional. If present, raises GitHub anonymous rate-limit (60/h)
           # to 5000/h and unlocks private-repo reads. Anonymous mode still
           # works for public repos.
-          GITHUB_TOKEN_FOR_ATLAS: ${{ secrets.GITHUB_TOKEN_FOR_ATLAS }}
+          ATLAS_GH_TOKEN: ${{ secrets.ATLAS_GH_TOKEN }}
         run: python scripts/generate_lessons.py --auto
