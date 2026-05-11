@@ -244,6 +244,32 @@ export async function generateLesson(
 
   const { resource } = await container.items.create(lesson);
   ctx.log(`generateLesson: created ${lesson.id} [${language}] ${topic} (${lesson.body.length} chars, repo=${repoId})`);
+
+  // Archive any queued stub(s) for the same (repoId, topic, language) so they
+  // disappear from the "Coming soon" list once a published version exists.
+  try {
+    const { resources: stubs } = await container.items
+      .query<LessonV2>(
+        {
+          query:
+            'SELECT * FROM c WHERE c.repoId = @rid AND c.topic = @topic AND c.language = @lang AND c.status = "queued"',
+          parameters: [
+            { name: '@rid', value: repoId },
+            { name: '@topic', value: topic },
+            { name: '@lang', value: language },
+          ],
+        },
+        { partitionKey: repoId },
+      )
+      .fetchAll();
+    for (const stub of stubs) {
+      await container.item(stub.id, repoId).replace({ ...stub, status: 'archived' });
+      ctx.log(`generateLesson: archived stub ${stub.id}`);
+    }
+  } catch (err) {
+    ctx.warn?.(`generateLesson: failed to archive queued stubs: ${err}`);
+  }
+
   return { status: 201, jsonBody: resource };
 }
 

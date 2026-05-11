@@ -159,6 +159,7 @@ export interface QueueLessonInput {
   language: 'en' | 'ru';
   rationale?: string;
   source_lesson_id?: string;
+  depth?: 'intro' | 'intermediate' | 'deep';
 }
 
 export async function queueLesson(input: QueueLessonInput, repoId?: string): Promise<Lesson> {
