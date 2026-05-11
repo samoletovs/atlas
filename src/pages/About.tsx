@@ -39,11 +39,23 @@ export function About() {
           its body and citations
         </li>
         <li>Theme and language preferences sync across your devices</li>
+        <li>
+          <strong>Private repos</strong> — paste a fine-grained GitHub token in{' '}
+          <strong>Settings</strong> and browse-and-pick your private repos with a
+          one-tap checklist
+        </li>
       </ul>
       <h3>Coming up</h3>
       <ul>
         <li>Saved highlights and notes per lesson</li>
-        <li>Private repos via per-user GitHub tokens</li>
+        <li>
+          <strong>Seamless GitHub sign-in</strong> — today private repos require pasting
+          a fine-grained token. The next step is a full OAuth sign-in flow (Azure Static
+          Web Apps Standard tier, ~$9/month) where atlas asks GitHub for repo permission
+          at login and you tick the repos right there — no token in sight. Tracked as a
+          paid-tier upgrade; will ship once a second researcher connects 5+ private repos
+          to atlas.
+        </li>
       </ul>
     </article>
   );

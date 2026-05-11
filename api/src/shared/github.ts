@@ -211,3 +211,112 @@ export async function fetchRecentCommits(
     })
     .filter((c) => c.sha);
 }
+
+// ---------------------------------------------------------------------------
+// User-scoped helpers (require an authenticated token — PAT or OAuth).
+// ---------------------------------------------------------------------------
+
+export interface GithubViewer {
+  login: string;
+  id: number;
+  /** Scopes from the `x-oauth-scopes` response header (classic PAT/OAuth). */
+  scopes: string[];
+  /** True when the token is fine-grained (returns a `x-github-token-type` of `pat`). */
+  fineGrained: boolean;
+}
+
+/**
+ * Validate a token by calling `GET /user`. Returns the authenticated user
+ * and the scopes the token holds. Returns `null` on 401/403 — caller decides
+ * whether to surface a 400 ("invalid token") or 502 ("transport error") via
+ * the wrapping endpoint.
+ */
+export async function verifyUserToken(token: string): Promise<GithubViewer | null> {
+  let res: Response;
+  try {
+    res = await fetch(`${GH}/user`, { headers: buildHeaders(token) });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const data = (await res.json()) as { login?: string; id?: number };
+  if (typeof data.login !== 'string' || typeof data.id !== 'number') return null;
+  const scopesHeader = res.headers.get('x-oauth-scopes') ?? '';
+  const tokenType = res.headers.get('x-github-token-type') ?? '';
+  return {
+    login: data.login,
+    id: data.id,
+    scopes: scopesHeader
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    fineGrained: tokenType.toLowerCase() === 'pat',
+  };
+}
+
+export interface GithubRepoListEntry {
+  fullName: string;     // `${owner}/${repo}`
+  owner: string;
+  repo: string;
+  description: string | null;
+  htmlUrl: string;
+  isPrivate: boolean;
+  isFork: boolean;
+  isArchived: boolean;
+  defaultBranch: string;
+  language: string | null;
+  stargazersCount: number;
+  pushedAt: string | null;
+}
+
+/**
+ * List repos visible to the authenticated user, including private + org repos.
+ * Pages through up to `maxPages` to stay under 5 GitHub calls per request.
+ * Default per_page is 100, so this returns up to 500 repos — enough for any
+ * realistic user.
+ */
+export async function fetchAccessibleRepos(
+  token: string,
+  maxPages = 5,
+): Promise<GithubRepoListEntry[] | null> {
+  const out: GithubRepoListEntry[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    let res: Response;
+    try {
+      res = await fetch(
+        `${GH}/user/repos?per_page=100&sort=pushed&page=${page}&affiliation=owner,collaborator,organization_member`,
+        { headers: buildHeaders(token) },
+      );
+    } catch {
+      return null;
+    }
+    if (!res.ok) return null;
+    const arr = (await res.json()) as unknown[];
+    if (!Array.isArray(arr) || arr.length === 0) break;
+    for (const r of arr) {
+      const x = r as Record<string, unknown>;
+      const ownerObj = (x.owner ?? {}) as Record<string, unknown>;
+      const owner = typeof ownerObj.login === 'string' ? ownerObj.login : '';
+      const repo = typeof x.name === 'string' ? x.name : '';
+      if (!owner || !repo) continue;
+      out.push({
+        fullName: `${owner}/${repo}`,
+        owner: owner.toLowerCase(),
+        repo: repo.toLowerCase(),
+        description: typeof x.description === 'string' ? x.description : null,
+        htmlUrl:
+          typeof x.html_url === 'string' ? x.html_url : `https://github.com/${owner}/${repo}`,
+        isPrivate: x.private === true,
+        isFork: x.fork === true,
+        isArchived: x.archived === true,
+        defaultBranch: typeof x.default_branch === 'string' ? x.default_branch : 'main',
+        language: typeof x.language === 'string' ? x.language : null,
+        stargazersCount:
+          typeof x.stargazers_count === 'number' ? x.stargazers_count : 0,
+        pushedAt: typeof x.pushed_at === 'string' ? x.pushed_at : null,
+      });
+    }
+    if (arr.length < 100) break;
+  }
+  return out;
+}

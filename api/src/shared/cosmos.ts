@@ -204,6 +204,21 @@ export interface AtlasUser {
     keyCipher: string;   // AES-256-GCM ciphertext, master key in App Settings (P4)
     addedAt: string;
   };
+  /**
+   * GitHub PAT for accessing the user's repos (including private). The
+   * plaintext token is never logged or returned to clients; only `addedAt`
+   * and `scopes` are surfaced via GET /api/me.
+   */
+  githubToken?: {
+    /** AES-256-GCM ciphertext of the PAT. See shared/crypto.ts. */
+    cipher: string;
+    /** Scopes/permissions GitHub reported on the token at upload time. */
+    scopes: string[];
+    /** When the user pasted the token (ISO 8601). */
+    addedAt: string;
+    /** Last time we used it successfully (ISO 8601). */
+    lastUsedAt?: string;
+  };
   /** P5: cross-device theme/lang sync. */
   preferences?: AtlasUserPreferences;
   /** Per-day soft-quota counters (asks, etc.). */
