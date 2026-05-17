@@ -1,0 +1,21 @@
+name: atlas
+purpose: "Personal teacher PWA — generates AI-authored bite-sized lessons from GitHub activity"
+users: "Personal learning coach for a developer"
+stage: mvp
+goals:
+  - "Autonomous lesson generation from code commits and READMEs"
+  - "Phone-readable (4 min reads, dark-mode, offline)"
+  - "Foundational topic coverage with priority backlog"
+  - "Microsoft Foundry AI integration"
+  - "Service worker offline support"
+similar:
+  - "Duolingo (adaptive learning)"
+  - "Roam Research"
+  - "Personal learning assistants"
+quality:
+  - tests
+  - ci-cd
+  - responsive
+  - api
+  - pwa
+  - auth
