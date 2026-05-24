@@ -1304,14 +1304,9 @@ main {
   padding-top: 1.25rem;
 }
 
-.ask-more-toggle {
-  font-size: 0.95rem;
-}
-
 .ask-more-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 0.5rem;
 }
 
@@ -1319,10 +1314,6 @@ main {
   font-family: var(--font-serif);
   font-size: 1.15rem;
   margin: 0;
-}
-
-.ask-more-close {
-  font-size: 0.85rem;
 }
 
 .ask-more-hint {
