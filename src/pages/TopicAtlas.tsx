@@ -280,7 +280,7 @@ export function TopicAtlas() {
           </div>
         </div>
         <p className="muted">
-          Every topic atlas has written for this repo. Bigger circles have more lessons;
+          Every topic atlas has been written for this repo. Bigger circles have more lessons;
           lines connect topics that suggest each other as next steps.
         </p>
         <div className="topic-atlas-stats" aria-label="Atlas summary">
