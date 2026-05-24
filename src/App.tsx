@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink, Link } from 'react-router-dom';
+import { Routes, Route, NavLink, Link, useLocation } from 'react-router-dom';
 import {
   createContext,
   useCallback,
@@ -409,8 +409,10 @@ function AuthenticatedShell({
   setRepoId,
   refreshMe,
 }: AuthenticatedShellProps) {
+  const location = useLocation();
   const currentRole: AtlasRole | null =
     me.allowedRepos.find((r) => r.repoId === repoId)?.role ?? null;
+  const isAtlasPage = location.pathname === '/atlas';
 
   const repoCtxValue = useMemo<RepoContextValue>(
     () => ({ repoId, setRepoId, allowedRepos: me.allowedRepos, role: currentRole }),
@@ -428,7 +430,7 @@ function AuthenticatedShell({
     <LangContext.Provider value={langCtxValue}>
       <RepoContext.Provider value={repoCtxValue}>
         <MeContext.Provider value={meCtxValue}>
-          <div className="app-shell">
+          <div className={`app-shell${isAtlasPage ? ' app-shell-wide' : ''}`}>
             <header className="topbar">
               <BrandPath />
               <nav>
