@@ -8,7 +8,7 @@
  * state on mount, then renders as a static SVG. Re-runs only when the
  * repo / language changes.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lesson, listLessons } from '../lib/api';
 import { useLang, useRepo } from '../App';
@@ -199,7 +199,8 @@ export function TopicAtlas() {
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [mode, setMode] = useState<'graph' | 'list'>('graph');
 
   useEffect(() => {
     setLessons(null);
@@ -215,6 +216,14 @@ export function TopicAtlas() {
     runSimulation(g.nodes, g.edges);
     return g;
   }, [lessons]);
+
+  useEffect(() => {
+    if (!graph || graph.nodes.length === 0) {
+      setSelected(null);
+      return;
+    }
+    setSelected((prev) => (prev && graph.nodes.some((n) => n.topic === prev) ? prev : graph.nodes[0].topic));
+  }, [graph]);
 
   if (allowedRepos.length === 0) {
     return (
@@ -244,109 +253,189 @@ export function TopicAtlas() {
     );
   }
 
-  const hoveredNode = hovered ? graph.nodes.find((n) => n.topic === hovered) : null;
+  const sortedNodes = [...graph.nodes].sort((a, b) => b.count - a.count);
+  const activeTopic = hovered ?? selected;
+  const activeNode = activeTopic ? graph.nodes.find((n) => n.topic === activeTopic) ?? null : null;
 
   return (
     <div className="topic-atlas">
       <header className="topic-atlas-header">
-        <h2>Topic atlas</h2>
+        <div className="topic-atlas-header-row">
+          <h2>Topic atlas</h2>
+          <div className="topic-atlas-mode-toggle" role="group" aria-label="Atlas view mode">
+            <button
+              type="button"
+              className={mode === 'graph' ? 'atlas-mode-btn active' : 'atlas-mode-btn'}
+              onClick={() => setMode('graph')}
+            >
+              Graph
+            </button>
+            <button
+              type="button"
+              className={mode === 'list' ? 'atlas-mode-btn active' : 'atlas-mode-btn'}
+              onClick={() => setMode('list')}
+            >
+              List
+            </button>
+          </div>
+        </div>
         <p className="muted">
-          Every topic atlas has written for this repo. Bigger circles have more lessons;
+          Every topic atlas has been written for this repo. Bigger circles have more lessons;
           lines connect topics that suggest each other as next steps.
         </p>
+        <div className="topic-atlas-stats" aria-label="Atlas summary">
+          <span className="atlas-stat">
+            <strong>{graph.nodes.length}</strong> topics
+          </span>
+          <span className="atlas-stat">
+            <strong>{graph.nodes.reduce((acc, n) => acc + n.count, 0)}</strong> lessons
+          </span>
+          <span className="atlas-stat">
+            <strong>{graph.edges.length}</strong> connections
+          </span>
+        </div>
+        <div className="topic-atlas-quick-list" aria-label="Top topics">
+          {sortedNodes.slice(0, 10).map((n) => (
+            <button
+              key={n.topic}
+              type="button"
+              className={activeTopic === n.topic ? 'atlas-chip active' : 'atlas-chip'}
+              onClick={() => {
+                setSelected(n.topic);
+                setHovered(null);
+                setMode('graph');
+              }}
+            >
+              {formatTopic(n.topic)} · {n.count}
+            </button>
+          ))}
+        </div>
       </header>
 
-      <div className="topic-atlas-canvas">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          role="img"
-          aria-label="Topic map"
-          preserveAspectRatio="xMidYMid meet"
-        >
-          {/* Edges first so nodes paint on top. */}
-          <g className="atlas-edges">
-            {graph.edges.map((e, i) => {
-              const a = graph.nodes.find((n) => n.topic === e.from)!;
-              const b = graph.nodes.find((n) => n.topic === e.to)!;
-              const active = hovered === e.from || hovered === e.to;
-              return (
-                <line
-                  key={i}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  className={active ? 'atlas-edge active' : 'atlas-edge'}
-                  strokeWidth={Math.min(3, 0.6 + e.weight * 0.4)}
-                />
-              );
-            })}
-          </g>
-          <g className="atlas-nodes">
-            {graph.nodes.map((n) => {
-              const dimmed = hovered != null && hovered !== n.topic;
-              return (
-                <g
-                  key={n.topic}
-                  className={`atlas-node${dimmed ? ' dimmed' : ''}${
-                    n.primary ? ' has-primary' : ' atlas-node-queued'
-                  }`}
-                  transform={`translate(${n.x}, ${n.y})`}
-                  onMouseEnter={() => setHovered(n.topic)}
-                  onMouseLeave={() => setHovered(null)}
-                  onClick={() => {
-                    if (n.primary) navigate(`/lesson/${n.primary.id}`);
-                  }}
-                  role="button"
-                  tabIndex={n.primary ? 0 : -1}
-                  onKeyDown={(e) => {
-                    if ((e.key === 'Enter' || e.key === ' ') && n.primary) {
-                      e.preventDefault();
-                      navigate(`/lesson/${n.primary.id}`);
-                    }
-                  }}
-                >
-                  <circle r={n.r} />
-                  <text
-                    y={n.r + 14}
-                    textAnchor="middle"
-                    className="atlas-node-label"
-                  >
-                    {formatTopic(n.topic)}
-                  </text>
-                  <text y={4} textAnchor="middle" className="atlas-node-count">
-                    {n.count}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-        </svg>
-      </div>
+      {mode === 'graph' ? (
+        <div className="topic-atlas-canvas">
+          <div className="topic-atlas-viewport">
+            <svg
+              viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+              role="img"
+              aria-label="Topic map"
+              preserveAspectRatio="xMidYMid meet"
+            >
+              {/* Edges first so nodes paint on top. */}
+              <g className="atlas-edges">
+                {graph.edges.map((e, i) => {
+                  const a = graph.nodes.find((n) => n.topic === e.from)!;
+                  const b = graph.nodes.find((n) => n.topic === e.to)!;
+                  const active = activeTopic === e.from || activeTopic === e.to;
+                  return (
+                    <line
+                      key={i}
+                      x1={a.x}
+                      y1={a.y}
+                      x2={b.x}
+                      y2={b.y}
+                      className={active ? 'atlas-edge active' : 'atlas-edge'}
+                      strokeWidth={Math.min(3, 0.6 + e.weight * 0.4)}
+                    />
+                  );
+                })}
+              </g>
+              <g className="atlas-nodes">
+                {graph.nodes.map((n) => {
+                  const dimmed = activeTopic != null && activeTopic !== n.topic;
+                  return (
+                    <g
+                      key={n.topic}
+                      className={`atlas-node${dimmed ? ' dimmed' : ''}${
+                        n.primary ? ' has-primary' : ' atlas-node-queued'
+                      }`}
+                      transform={`translate(${n.x}, ${n.y})`}
+                      onMouseEnter={() => setHovered(n.topic)}
+                      onMouseLeave={() => setHovered(null)}
+                      onFocus={() => setSelected(n.topic)}
+                      onClick={() => setSelected(n.topic)}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${formatTopic(n.topic)}, ${n.count} lessons`}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelected(n.topic);
+                        }
+                      }}
+                    >
+                      <circle r={n.r} />
+                      <text
+                        y={n.r + 14}
+                        textAnchor="middle"
+                        className="atlas-node-label"
+                      >
+                        {formatTopic(n.topic)}
+                      </text>
+                      <text y={4} textAnchor="middle" className="atlas-node-count">
+                        {n.count}
+                      </text>
+                    </g>
+                  );
+                })}
+              </g>
+            </svg>
+          </div>
 
-      {hoveredNode && (
-        <aside className="topic-atlas-detail">
-          <h3>{formatTopic(hoveredNode.topic)}</h3>
-          <p className="muted small">
-            {hoveredNode.count} lesson{hoveredNode.count === 1 ? '' : 's'}
-          </p>
-          <ul>
-            {hoveredNode.lessons.slice(0, 6).map((l) => (
-              <li key={l.id}>
-                <button
-                  type="button"
-                  className="btn-link"
-                  onClick={() => navigate(`/lesson/${l.id}`)}
-                  disabled={l.status === 'queued'}
-                >
-                  {l.title}
-                  {l.status === 'queued' && ' (queued)'}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
+          <aside className="topic-atlas-detail">
+            {activeNode ? (
+              <>
+                <h3>{formatTopic(activeNode.topic)}</h3>
+                <p className="muted small">
+                  {activeNode.count} lesson{activeNode.count === 1 ? '' : 's'}
+                </p>
+                <ul>
+                  {activeNode.lessons.slice(0, 6).map((l) => (
+                    <li key={l.id}>
+                      <button
+                        type="button"
+                        className="btn-link"
+                        onClick={() => navigate(`/lesson/${l.id}`)}
+                        disabled={l.status === 'queued'}
+                      >
+                        {l.title}
+                        {l.status === 'queued' && ' (queued)'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <p className="muted small">Select a topic to see lessons.</p>
+            )}
+          </aside>
+        </div>
+      ) : (
+        <section className="topic-atlas-list" aria-label="Topic list">
+          {sortedNodes.map((n) => (
+            <article key={n.topic} className="topic-atlas-list-item">
+              <header className="topic-atlas-list-head">
+                <h3>{formatTopic(n.topic)}</h3>
+                <span className="topic-atlas-pill">{n.count} lesson{n.count === 1 ? '' : 's'}</span>
+              </header>
+              <ul>
+                {n.lessons.slice(0, 4).map((l) => (
+                  <li key={l.id}>
+                    <button
+                      type="button"
+                      className="btn-link"
+                      onClick={() => navigate(`/lesson/${l.id}`)}
+                      disabled={l.status === 'queued'}
+                    >
+                      {l.title}
+                      {l.status === 'queued' && ' (queued)'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </section>
       )}
     </div>
   );
