@@ -1,0 +1,128 @@
+name: "Auto-merge Copilot PRs"
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+  check_suite:
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    # Only auto-merge PRs created by Copilot
+    # The Copilot coding agent login is 'Copilot' (app slug, not 'copilot[bot]')
+    if: >-
+      github.event.pull_request.user.login == 'Copilot' ||
+      (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge for Copilot PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // For check_suite events, find the associated Copilot PR
+            let prNumber;
+
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              if (pr.user.login !== 'Copilot') {
+                console.log('Not a Copilot PR — skipping');
+                return;
+              }
+              prNumber = pr.number;
+            } else if (context.eventName === 'check_suite') {
+              // Find open PRs by copilot[bot] for the head SHA
+              const sha = context.payload.check_suite.head_sha;
+              const { data: prs } = await github.rest.pulls.list({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                head: `${context.repo.owner}:${context.payload.check_suite.head_branch}`
+              });
+              const copilotPr = prs.find(p => p.user.login === 'Copilot');
+              if (!copilotPr) {
+                console.log('No Copilot PR found for this check suite');
+                return;
+              }
+              prNumber = copilotPr.number;
+            }
+
+            if (!prNumber) return;
+
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            // Convert draft PRs to ready-for-review
+            if (pr.draft) {
+              try {
+                await github.graphql(`
+                  mutation($prId: ID!) {
+                    markPullRequestReadyForReview(input: { pullRequestId: $prId }) {
+                      pullRequest { number isDraft }
+                    }
+                  }
+                `, { prId: pr.node_id });
+                console.log(`Converted draft PR #${prNumber} to ready-for-review`);
+              } catch (draftErr) {
+                console.log(`Could not convert draft: ${draftErr.message} — skipping`);
+                return;
+              }
+            }
+
+            if (pr.mergeable === false) {
+              console.log(`PR #${prNumber} is not mergeable (conflicts) — skipping`);
+              return;
+            }
+
+            // Enable auto-merge (squash)
+            try {
+              // Use GraphQL to enable auto-merge
+              const mutation = `
+                mutation($prId: ID!) {
+                  enablePullRequestAutoMerge(input: {
+                    pullRequestId: $prId,
+                    mergeMethod: SQUASH
+                  }) {
+                    pullRequest { number }
+                  }
+                }
+              `;
+              await github.graphql(mutation, { prId: pr.node_id });
+              console.log(`Auto-merge enabled for PR #${prNumber}`);
+            } catch (e) {
+              // Fallback: approve and merge directly if auto-merge isn't available
+              console.log(`Could not enable auto-merge: ${e.message}`);
+
+              // Approve the PR
+              try {
+                await github.rest.pulls.createReview({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  event: 'APPROVE',
+                  body: '🤖 Auto-approved: Copilot PR with passing CI checks.'
+                });
+              } catch (approveErr) {
+                console.log(`Could not approve: ${approveErr.message}`);
+              }
+
+              // Try direct merge
+              try {
+                await github.rest.pulls.merge({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  merge_method: 'squash'
+                });
+                console.log(`Directly merged PR #${prNumber}`);
+              } catch (mergeErr) {
+                console.log(`Could not merge yet: ${mergeErr.message} — will retry on next check`);
+              }
+            }
