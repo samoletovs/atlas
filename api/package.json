@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@azure/cosmos": "^4.7.0",
-    "@azure/functions": "^4.7.0",
+    "@azure/functions": "^4.16.0",
     "@azure/identity": "^4.6.0",
     "openai": "^6.37.0"
   },
