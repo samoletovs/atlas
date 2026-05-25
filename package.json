@@ -21,7 +21,7 @@
     "@playwright/test": "^1.55.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^5.0.0",
+    "@vitejs/plugin-react": "^6.0.2",
     "typescript": "^5.5.3",
     "vite": "^8.0.0",
     "vite-plugin-pwa": "^1.1.1"
