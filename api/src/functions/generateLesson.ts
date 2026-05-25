@@ -19,7 +19,10 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse, requireOwner } from '../shared/auth.js';
 import { checkQuota } from '../shared/quota.js';
+import { checkBudget, recordEstimatedCost } from '../shared/budget.js';
 import { getOpenAIClientForUser } from '../shared/openaiClient.js';
+
+const GENERATE_MAX_TOKENS = 1024;
 
 interface GenerateBody {
   title?: string;
@@ -125,9 +128,11 @@ interface GeneratedLesson {
 
 async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string): Promise<GeneratedLesson> {
   const { client, deployment } = await getOpenAIClientForUser(userId);
+  recordEstimatedCost(deployment, GENERATE_MAX_TOKENS);
   const completion = await client.chat.completions.create({
     model: deployment,
     temperature: 0.4,
+    max_tokens: GENERATE_MAX_TOKENS,
     response_format: { type: 'json_object' },
     messages: [
       { role: 'system', content: LIBRARIAN_INSTRUCTIONS },
@@ -163,6 +168,17 @@ export async function generateLesson(
       jsonBody: {
         error: `Daily generation cap reached (${quota.state.used}/${quota.state.limit}). Resets at ${quota.state.resetAt}.`,
         quota: quota.state,
+      },
+    };
+  }
+
+  // Global per-instance daily $ cap. Defense-in-depth on top of per-user quota.
+  const bg = checkBudget();
+  if (bg.exceeded) {
+    return {
+      status: 429,
+      jsonBody: {
+        error: `Atlas daily AI budget reached ($${bg.spentUsd.toFixed(2)}/$${bg.budgetUsd.toFixed(2)}). Resets at ${bg.resetAt}.`,
       },
     };
   }
