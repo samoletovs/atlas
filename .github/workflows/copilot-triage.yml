@@ -1,0 +1,250 @@
+name: "Copilot: Triage and assign issues"
+
+on:
+  issues:
+    types: [opened, labeled]
+
+jobs:
+  triage:
+    # Skip if already triaged
+    if: >-
+      !contains(github.event.issue.labels.*.name, 'approved') &&
+      !contains(github.event.issue.labels.*.name, 'rejected') &&
+      !contains(github.event.issue.labels.*.name, 'needs-info')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: copilot-triage-${{ github.event.issue.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Auto-label and triage with Azure OpenAI
+        uses: actions/github-script@v7
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const title = issue.title;
+            const existingLabels = issue.labels.map(l => l.name);
+
+            // ── Step 1: Auto-label from emoji prefix ───────────────────
+            const labelMap = [
+              { pattern: '🐛 Bug Report', label: 'bug' },
+              { pattern: '💡 Feature Idea', label: 'enhancement' },
+              { pattern: '⚖️ Balance Issue', label: 'game-balance' },
+              { pattern: '📝 Improvement', label: 'enhancement' },
+              { pattern: '🔧 Tech Debt', label: 'tech-debt' },
+            ];
+            const match = labelMap.find(m => title.includes(m.pattern));
+
+            if (match && !existingLabels.includes(match.label)) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: [match.label]
+              });
+              existingLabels.push(match.label);
+              console.log(`Auto-labeled: ${match.label}`);
+            }
+
+            // ── Step 2: Triage all issues (no label gate) ─────────────
+            // Every issue gets AI triage regardless of labels
+
+            // ── Step 3: Gather context ─────────────────────────────────
+            const { data: recentIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              per_page: 15,
+              sort: 'created',
+              direction: 'desc'
+            });
+            const otherIssues = recentIssues
+              .filter(i => i.number !== issue.number)
+              .map(i => `#${i.number}: ${i.title} [${i.state}]`)
+              .join('\n');
+
+            const fs = require('fs');
+            let projectContext = '';
+            for (const f of ['AGENTS.md', 'CLAUDE.md', 'README.md']) {
+              if (fs.existsSync(f)) {
+                const content = fs.readFileSync(f, 'utf8');
+                projectContext += `\n--- ${f} ---\n${content.slice(0, 2000)}\n`;
+              }
+            }
+
+            // ── Step 4: Call Azure OpenAI for triage ───────────────────
+            const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+            const apiKey = process.env.AZURE_OPENAI_KEY;
+
+            if (!endpoint || !apiKey) {
+              console.log('Azure OpenAI not configured — skipping AI triage');
+              return;
+            }
+
+            const deploymentName = 'gpt-4.1-nano';
+            const apiUrl = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2025-01-01-preview`;
+
+            const triagePrompt = `You are a project maintainer triaging a GitHub issue.
+
+            PROJECT CONTEXT (abbreviated):
+            ${projectContext.slice(0, 3000)}
+
+            ISSUE #${issue.number}: "${title}"
+            Labels: ${existingLabels.join(', ')}
+            Body:
+            ${(issue.body || '(empty)').slice(0, 2000)}
+
+            RECENT ISSUES (duplicate check):
+            ${otherIssues}
+
+            EVALUATE:
+            1. Actionable — clear enough to implement?
+            2. Relevant — about this project?
+            3. Feasible — solvable with code changes, reasonable scope?
+            4. Safe — no malicious intent?
+            5. Not duplicate — no similar recent issue?
+            6. Value — genuinely improves the project?
+
+            Respond with EXACTLY this JSON (no markdown, no code fences):
+            {"decision":"APPROVED|REJECTED|NEEDS_INFO","confidence":1-10,"summary":"one sentence","recommendation":"brief implementation approach if approved"}`;
+
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'api-key': apiKey
+              },
+              body: JSON.stringify({
+                messages: [{ role: 'user', content: triagePrompt }],
+                max_tokens: 300,
+                temperature: 0.1
+              })
+            });
+
+            if (!response.ok) {
+              const err = await response.text();
+              console.log(`Azure OpenAI error: ${response.status} — ${err}`);
+              // Fail open: label needs-review so human can triage
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['needs-review']
+              });
+              return;
+            }
+
+            const result = await response.json();
+            const rawText = result.choices[0].message.content.trim();
+
+            // Parse JSON response
+            let triage;
+            try {
+              triage = JSON.parse(rawText);
+            } catch {
+              // Try extracting JSON from response
+              const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                triage = JSON.parse(jsonMatch[0]);
+              } else {
+                console.log('Failed to parse triage response:', rawText);
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  labels: ['needs-review']
+                });
+                return;
+              }
+            }
+
+            const decision = triage.decision || 'NEEDS_INFO';
+            const confidence = triage.confidence || 5;
+            const summary = triage.summary || '';
+            const recommendation = triage.recommendation || '';
+
+            // ── Step 5: Apply decision ─────────────────────────────────
+            let label = 'needs-info';
+            if (decision === 'APPROVED' && confidence >= 7) {
+              label = 'approved';
+            } else if (decision === 'APPROVED' && confidence < 7) {
+              label = 'needs-review';
+            } else if (decision === 'REJECTED') {
+              label = 'rejected';
+            }
+
+            // Post triage comment
+            const emoji = label === 'approved' ? '✅' : label === 'rejected' ? '❌' : '🔍';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `${emoji} **AI Triage** (confidence: ${confidence}/10)\n\n${summary}\n\n${recommendation ? `**Approach:** ${recommendation}` : ''}`
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: [label]
+            });
+
+            // Close rejected issues
+            if (label === 'rejected') {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+            }
+
+            // Assign Copilot for approved issues
+            if (label === 'approved') {
+              // Use GraphQL to assign Copilot — REST addAssignees doesn't work for bot accounts
+              try {
+                const { data: issueData } = await github.rest.issues.get({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number
+                });
+                const mutation = `
+                  mutation($issueId: ID!, $userId: ID!) {
+                    addAssigneesToAssignable(input: {
+                      assignableId: $issueId,
+                      assigneeIds: [$userId]
+                    }) {
+                      assignable { ... on Issue { number } }
+                    }
+                  }
+                `;
+                // Look up Copilot bot user ID
+                const { user } = await github.graphql(`{ user(login: "copilot-swe-agent[bot]") { id } }`).catch(() => ({ user: null }));
+                if (user) {
+                  await github.graphql(mutation, { issueId: issueData.node_id, userId: user.id });
+                  console.log('Assigned Copilot via GraphQL');
+                } else {
+                  // Fallback: REST with bot name (works on newer GitHub)
+                  await github.rest.issues.addAssignees({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    assignees: ['copilot-swe-agent[bot]']
+                  });
+                  console.log('Assigned Copilot via REST fallback');
+                }
+              } catch (e) {
+                console.log(`Could not assign Copilot: ${e.message} — issue will need manual assignment`);
+              }
+            }
+
+            console.log(`Issue #${issue.number}: ${decision} (confidence ${confidence}) → label: ${label}`);
