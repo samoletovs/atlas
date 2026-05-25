@@ -15,6 +15,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse } from '../shared/auth.js';
 import { consumeAskTurn } from '../shared/quota.js';
+import { checkBudget, recordEstimatedCost } from '../shared/budget.js';
 import { getOpenAIClientForUser } from '../shared/openaiClient.js';
 
 interface ChatTurn {
@@ -93,6 +94,17 @@ export async function askLesson(
     };
   }
 
+  // Global per-instance daily $ cap. Defense-in-depth on top of per-user quota.
+  const bg = checkBudget();
+  if (bg.exceeded) {
+    return {
+      status: 429,
+      jsonBody: {
+        error: `Atlas daily AI budget reached ($${bg.spentUsd.toFixed(2)}/$${bg.budgetUsd.toFixed(2)}). Resets at ${bg.resetAt}.`,
+      },
+    };
+  }
+
   let body: AskBody;
   try {
     body = (await req.json()) as AskBody;
@@ -158,6 +170,7 @@ export async function askLesson(
   }
 
   const { client, deployment } = await getOpenAIClientForUser(userId);
+  recordEstimatedCost(deployment, MAX_ANSWER_TOKENS);
   try {
     const completion = await client.chat.completions.create({
       model: deployment,
