@@ -13,13 +13,13 @@
     "test:install": "playwright install chromium --with-deps"
   },
   "dependencies": {
-    "react": "^19.0.0",
+    "react": "^19.2.7",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.16.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "@types/react": "^19.2.15",
+    "@types/react": "^19.2.16",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^6.0.2",
     "typescript": "^6.0.3",
