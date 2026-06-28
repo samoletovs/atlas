@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lesson, listLessons, generateLessonNow } from '../lib/api';
+import { isRecentlyRead } from '../lib/recentlyRead';
 import { useLang, useRepo } from '../App';
 
 interface Props {
@@ -22,7 +23,15 @@ export function LessonsList({ status }: Props) {
     setLessons(null);
     setError(null);
     listLessons(status, lang, repoId)
-      .then(setLessons)
+      .then((items) =>
+        // On "Next up", hide lessons marked read this session even if the
+        // backend read-after-write hasn't propagated yet.
+        setLessons(
+          status === 'published'
+            ? items.filter((l) => !isRecentlyRead(l.id))
+            : items,
+        ),
+      )
       .catch((e: Error) => setError(e.message));
 
     // Only show "Coming soon" on the main "Next up" view.
