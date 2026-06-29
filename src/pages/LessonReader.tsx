@@ -10,6 +10,7 @@ import {
   AskChatTurn,
 } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
+import { markRecentlyRead } from '../lib/recentlyRead';
 import { useLang, useRepo } from '../App';
 
 type SuggestionState =
@@ -151,6 +152,10 @@ export function LessonReader() {
   async function handleMarkRead() {
     if (!lesson) return;
     await updateLessonState(lesson.id, 'mark_read', repoId);
+    // Remember locally so the "Next up" list hides it immediately, even if the
+    // backend read-after-write hasn't caught up yet (Cosmos session consistency
+    // isn't guaranteed across separate Function invocations).
+    markRecentlyRead(lesson.id);
     navigate('/');
   }
 
