@@ -178,7 +178,7 @@ function sanitizeGeneratedLesson(payload: GeneratedLesson): GeneratedLesson {
   const pattern = new RegExp(
     `(?im)^[ \\t]*(?:` +
       `#{1,6}[ \\t]+(?:${sectionsAlt})\\b[^\\n]*` +
-      `|\\*\\*\\s*(?:${sectionsAlt})\\b[^*\\n]*\\*\\*: ?` +
+      `|\\*\\*\\s*(?:${sectionsAlt})\\b[^*\\n]*\\*\\*:?` +
       `|(?:${sectionsAlt})\\b[^\\n]*:\\s*` +
       `)[ \\t]*\\n`,
   );
@@ -193,8 +193,12 @@ function sanitizeGeneratedLesson(payload: GeneratedLesson): GeneratedLesson {
   payload.body = payload.body.slice(0, splitAt).trim();
 
   if (!Array.isArray(payload.citations) || payload.citations.length === 0) {
-    const mdLinks = [...tail.matchAll(/\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/g)].map((m) => m[1]!);
-    const bare = [...tail.matchAll(/(?<![\(\["'])https?:\/\/[^\s)\]"']+/g)].map((m) => m[0]!);
+    const mdLinks = [...tail.matchAll(/\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/g)]
+      .map((m) => m[1])
+      .filter((url): url is string => typeof url === 'string');
+    const bare = [...tail.matchAll(/https?:\/\/[^\s)\]"']+/g)]
+      .map((m) => m[0])
+      .filter((url): url is string => typeof url === 'string');
     const deduped: string[] = [];
     const seen = new Set<string>();
     for (const raw of [...mdLinks, ...bare]) {
@@ -210,13 +214,26 @@ function sanitizeGeneratedLesson(payload: GeneratedLesson): GeneratedLesson {
   }
 
   if (!Array.isArray(payload.suggested_next) || payload.suggested_next.length === 0) {
-    const objectRegex =
-      /\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"topic"\s*:\s*"[^"]+"\s*,\s*"rationale"\s*:\s*"[^"]+"\s*\}/g;
+    const objectRegex = /\{[^{}]+\}/g;
     const salvaged = [...tail.matchAll(objectRegex)]
       .map((m) => m[0])
       .map((raw) => {
         try {
-          return JSON.parse(raw) as { title: string; topic: string; rationale: string };
+          const parsed = JSON.parse(raw);
+          if (
+            parsed &&
+            typeof parsed === 'object' &&
+            typeof parsed.title === 'string' &&
+            typeof parsed.topic === 'string' &&
+            typeof parsed.rationale === 'string'
+          ) {
+            return {
+              title: parsed.title,
+              topic: parsed.topic,
+              rationale: parsed.rationale,
+            };
+          }
+          return null;
         } catch {
           return null;
         }
