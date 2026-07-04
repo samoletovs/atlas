@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Lesson, listLessons, generateLessonNow } from '../lib/api';
 import { isRecentlyRead } from '../lib/recentlyRead';
 import { useLang, useRepo } from '../App';
@@ -12,6 +12,11 @@ export function LessonsList({ status }: Props) {
   const { lang } = useLang();
   const { repoId, role } = useRepo();
   const navigate = useNavigate();
+  const location = useLocation();
+  // When navigating here right after marking a lesson read, the id is passed
+  // via navigation state so we can filter it out before the API response
+  // arrives (works even when the Cosmos read-after-write hasn't propagated).
+  const justRead = (location.state as { justRead?: string } | null)?.justRead ?? null;
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [queued, setQueued] = useState<Lesson[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +33,7 @@ export function LessonsList({ status }: Props) {
         // backend read-after-write hasn't propagated yet.
         setLessons(
           status === 'published'
-            ? items.filter((l) => !isRecentlyRead(l.id))
+            ? items.filter((l) => !isRecentlyRead(l.id) && l.id !== justRead)
             : items,
         ),
       )
@@ -42,7 +47,7 @@ export function LessonsList({ status }: Props) {
     } else {
       setQueued([]);
     }
-  }, [status, lang, repoId]);
+  }, [status, lang, repoId, justRead]);
 
   if (error) return <div className="error">Couldn’t load lessons: {error}</div>;
   if (!lessons) return <div className="loading">Loading…</div>;
