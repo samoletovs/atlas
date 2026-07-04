@@ -48,7 +48,10 @@ Rules for every lesson you write:
 6. Cite 1–3 authoritative sources at the end as plain URLs (Microsoft Learn preferred).
 7. Avoid code blocks unless 3–6 lines maximum and absolutely necessary. Prefer prose.
 8. Do NOT bury the lede. The "why this matters" should be in the first or second paragraph.
-9. End every lesson with 2–3 "What to learn next" suggestions in JSON format the system can parse.
+9. Propose 2–3 "What to learn next" suggestions. Put them ONLY in the
+   \`suggested_next\` array of the output JSON. Do NOT write a "What to learn next",
+   "Suggested next steps", or "Next steps" section in the body markdown — the
+   system renders that section automatically.
 
 Markdown formatting (use these to make scanning the lesson on a phone effortless):
 
@@ -76,13 +79,21 @@ fields exactly:
   "topic": "the topic slug provided",
   "depth": "intro|intermediate|deep",
   "read_minutes": <int 2..7>,
-  "body": "the markdown body of the lesson",
+  "body": "the markdown body of the lesson — prose only, no Sources section, no Next-steps section",
   "citations": ["https://learn.microsoft.com/...", "..."],
   "suggested_next": [
     {"title": "...", "topic": "topic-slug", "rationale": "1-sentence why"},
     {"title": "...", "topic": "topic-slug", "rationale": "1-sentence why"}
   ]
 }
+
+Hard requirements for the \`body\` field:
+- It must be pure markdown prose (with the bolds, callouts, cross-links, and lists from rules 10–13).
+- It must NOT contain any of these section headings (case-insensitive): "Sources", "References",
+  "For more information", "Further reading", "What to learn next", "Suggested next steps",
+  "Next steps", "Resources".
+- It must NOT contain raw JSON, JSON-like bullets such as \`{"title": ...}\`, or a bullet list of
+  URLs at the end. Citations and next-step suggestions belong ONLY in their structured fields.
 
 Output ONLY the JSON. No prose around it. No markdown fences. Plain JSON.`;
 
@@ -126,6 +137,99 @@ interface GeneratedLesson {
   suggested_next: { title: string; topic: string; rationale: string }[];
 }
 
+const BAD_BODY_SECTION_PATTERNS = [
+  'sources',
+  'citations',
+  'references',
+  'for\\s+more\\s+(?:information|info|detailed\\s+guidance|details|insights)',
+  'further\\s+reading',
+  'what\\s+to\\s+learn\\s+next(?:\\s+suggestions)?',
+  'suggested\\s+next(?:\\s+(?:steps|topics))?',
+  'next\\s+steps',
+  'resources',
+  'citing\\s+authoritative\\s+sources',
+];
+
+function stripCodeFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*\n/, '').replace(/\n```\s*$/, '');
+}
+
+function parseModelJson(text: string): GeneratedLesson {
+  const cleaned = stripCodeFences(text).trim();
+  try {
+    return JSON.parse(cleaned) as GeneratedLesson;
+  } catch {
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace === -1 || lastBrace <= firstBrace) {
+      throw new Error('Model response is not valid JSON');
+    }
+    const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+    return JSON.parse(candidate) as GeneratedLesson;
+  }
+}
+
+function sanitizeGeneratedLesson(payload: GeneratedLesson): GeneratedLesson {
+  if (typeof payload.body !== 'string') {
+    return payload;
+  }
+
+  const sectionsAlt = BAD_BODY_SECTION_PATTERNS.join('|');
+  const pattern = new RegExp(
+    `(?im)^[ \\t]*(?:` +
+      `#{1,6}[ \\t]+(?:${sectionsAlt})\\b[^\\n]*` +
+      `|\\*\\*\\s*(?:${sectionsAlt})\\b[^*\\n]*\\*\\*: ?` +
+      `|(?:${sectionsAlt})\\b[^\\n]*:\\s*` +
+      `)[ \\t]*\\n`,
+  );
+  const match = pattern.exec(payload.body);
+  if (!match) {
+    payload.body = payload.body.trim();
+    return payload;
+  }
+
+  const splitAt = match.index;
+  const tail = payload.body.slice(splitAt);
+  payload.body = payload.body.slice(0, splitAt).trim();
+
+  if (!Array.isArray(payload.citations) || payload.citations.length === 0) {
+    const mdLinks = [...tail.matchAll(/\[[^\]]+\]\((https?:\/\/[^\s)]+)\)/g)].map((m) => m[1]!);
+    const bare = [...tail.matchAll(/(?<![\(\["'])https?:\/\/[^\s)\]"']+/g)].map((m) => m[0]!);
+    const deduped: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of [...mdLinks, ...bare]) {
+      const url = raw.replace(/[.,);:]+$/, '');
+      if (!seen.has(url)) {
+        seen.add(url);
+        deduped.push(url);
+      }
+    }
+    if (deduped.length > 0) {
+      payload.citations = deduped.slice(0, 3);
+    }
+  }
+
+  if (!Array.isArray(payload.suggested_next) || payload.suggested_next.length === 0) {
+    const objectRegex =
+      /\{\s*"title"\s*:\s*"[^"]+"\s*,\s*"topic"\s*:\s*"[^"]+"\s*,\s*"rationale"\s*:\s*"[^"]+"\s*\}/g;
+    const salvaged = [...tail.matchAll(objectRegex)]
+      .map((m) => m[0])
+      .map((raw) => {
+        try {
+          return JSON.parse(raw) as { title: string; topic: string; rationale: string };
+        } catch {
+          return null;
+        }
+      })
+      .filter((item): item is { title: string; topic: string; rationale: string } => item !== null);
+    if (salvaged.length > 0) {
+      payload.suggested_next = salvaged.slice(0, 3);
+    }
+  }
+
+  return payload;
+}
+
 async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string): Promise<GeneratedLesson> {
   const { client, deployment } = await getOpenAIClientForUser(userId);
   recordEstimatedCost(deployment, GENERATE_MAX_TOKENS);
@@ -141,9 +245,7 @@ async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string)
   });
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text) throw new Error('Model returned empty response');
-  // Strip code fences just in case
-  const cleaned = text.replace(/^```(?:json)?\s*\n/, '').replace(/\n```\s*$/, '');
-  const parsed = JSON.parse(cleaned) as GeneratedLesson;
+  const parsed = sanitizeGeneratedLesson(parseModelJson(text));
   if (!parsed.title || !parsed.body) {
     throw new Error('Model response missing required fields');
   }
