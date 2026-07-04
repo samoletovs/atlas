@@ -151,12 +151,16 @@ export function LessonReader() {
 
   async function handleMarkRead() {
     if (!lesson) return;
-    await updateLessonState(lesson.id, 'mark_read', repoId);
+    // Capture id before the await so it's available even if lesson state changes.
+    const lessonId = lesson.id;
+    await updateLessonState(lessonId, 'mark_read', repoId);
     // Remember locally so the "Next up" list hides it immediately, even if the
     // backend read-after-write hasn't caught up yet (Cosmos session consistency
     // isn't guaranteed across separate Function invocations).
-    markRecentlyRead(lesson.id);
-    navigate('/');
+    markRecentlyRead(lessonId);
+    // Pass the id via navigation state so LessonsList can filter it out
+    // synchronously on its very first render, before the fetch resolves.
+    navigate('/', { state: { justRead: lessonId } });
   }
 
   async function handleSaveToggle() {
