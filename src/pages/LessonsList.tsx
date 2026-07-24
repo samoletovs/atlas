@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Lesson, listLessons, generateLessonNow } from '../lib/api';
 import { isRecentlyRead } from '../lib/recentlyRead';
+import { listDueReviewCards, markReviewDone, reviewStepLabel } from '../lib/spacedReview';
 import { useLang, useRepo } from '../App';
 
 interface Props {
@@ -18,6 +19,9 @@ export function LessonsList({ status }: Props) {
   // arrives (works even when the Cosmos read-after-write hasn't propagated).
   const justRead = (location.state as { justRead?: string } | null)?.justRead ?? null;
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
+  const [reviewCards, setReviewCards] = useState<
+    { lesson: Lesson; step: number; dueAt: string }[]
+  >([]);
   const [queued, setQueued] = useState<Lesson[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState<Record<string, 'busy' | { error: string }>>({});
@@ -44,8 +48,12 @@ export function LessonsList({ status }: Props) {
       listLessons('queued', lang, repoId)
         .then(setQueued)
         .catch(() => setQueued([]));
+      listLessons('read', lang, repoId)
+        .then((readLessons) => setReviewCards(listDueReviewCards(repoId, readLessons)))
+        .catch(() => setReviewCards([]));
     } else {
       setQueued([]);
+      setReviewCards([]);
     }
   }, [status, lang, repoId, justRead]);
 
@@ -77,6 +85,41 @@ export function LessonsList({ status }: Props) {
           )}
         </Link>
       ))}
+
+      {status === 'published' && reviewCards.length > 0 && (
+        <>
+          <h2 className="list-heading list-heading-muted">Review cards</h2>
+          {reviewCards.map((c) => (
+            <article key={c.lesson.id} className="card card-review">
+              <div className="card-meta">
+                <span className="topic">{c.lesson.topic.split('/').slice(-1)[0]}</span>
+                <span>{reviewStepLabel(c.step)}</span>
+                <span>due now</span>
+              </div>
+              <h3 className="card-title">{c.lesson.title}</h3>
+              <div className="review-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => navigate(`/lesson/${c.lesson.id}`)}
+                >
+                  Review lesson
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    markReviewDone(repoId, c.lesson.id);
+                    setReviewCards((current) => current.filter((x) => x.lesson.id !== c.lesson.id));
+                  }}
+                >
+                  Mark reviewed
+                </button>
+              </div>
+            </article>
+          ))}
+        </>
+      )}
 
       {queued.length > 0 && (
         <>
@@ -157,4 +200,3 @@ function emptyMessage(s: string): string {
   if (s === 'read') return 'You haven’t finished any lessons yet.';
   return 'Nothing here.';
 }
-
