@@ -91,6 +91,12 @@ export interface Lesson {
   saved?: boolean;
 }
 
+/** A lesson enriched with adaptive-recommendation metadata. */
+export interface LearningPathLesson extends Lesson {
+  recommendation_reason: string;
+  recommendation_score: number;
+}
+
 const isLocalDev = window.location.hostname === 'localhost';
 
 export async function fetchUser(): Promise<ClientPrincipal | null> {
@@ -387,6 +393,26 @@ export async function askLesson(
     throw new Error(`askLesson failed: ${res.status}${detail}`);
   }
   return (await res.json()) as AskResult;
+}
+
+// ---------- Adaptive learning path (recommended lessons) ----------
+
+/**
+ * Returns unread published lessons sorted by adaptive relevance. Each lesson
+ * includes `recommendation_reason` and `recommendation_score` metadata.
+ */
+export async function getRecommendations(
+  lang: string = 'en',
+  repoId?: string,
+): Promise<LearningPathLesson[]> {
+  const url = withRepoId(
+    `/api/lessons/recommended?lang=${encodeURIComponent(lang)}`,
+    repoId,
+  );
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`getRecommendations failed: ${res.status}`);
+  const data = (await res.json()) as { lessons: LearningPathLesson[] };
+  return data.lessons;
 }
 
 // ---------- GitHub PAT management (Settings page) ----------
