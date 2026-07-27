@@ -15,6 +15,7 @@ import { Admin } from './pages/Admin';
 import { AddRepo } from './pages/AddRepo';
 import { Settings } from './pages/Settings';
 import { TopicAtlas } from './pages/TopicAtlas';
+import { LearningPath } from './pages/LearningPath';
 import {
   fetchUser,
   fetchMe,
@@ -435,6 +436,7 @@ function AuthenticatedShell({
                 <NavLink to="/" end>
                   Next up
                 </NavLink>
+                <NavLink to="/for-you">For you</NavLink>
                 <NavLink to="/saved">Saved</NavLink>
                 <NavLink to="/read">Read</NavLink>
                 {hasAnyRepo && <NavLink to="/atlas">Atlas</NavLink>}
@@ -457,6 +459,7 @@ function AuthenticatedShell({
                 />
                 <Route path="/saved" element={<LessonsList status="saved" />} />
                 <Route path="/read" element={<LessonsList status="read" />} />
+                <Route path="/for-you" element={<LearningPath />} />
                 <Route path="/atlas" element={<TopicAtlas />} />
                 <Route path="/lesson/:id" element={<LessonReader />} />
                 <Route path="/admin" element={<Admin />} />
