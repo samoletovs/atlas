@@ -97,7 +97,7 @@ atlas/
 
 ⏳ Bring-your-own-key (lift per-user cap)
 ⏳ Public / unlisted lessons surface
-⏳ Spaced-repetition review cards
+✅ Spaced-repetition review cards
 
 See [docs/MULTI-USER-PLAN.md](docs/MULTI-USER-PLAN.md) for the full phased plan.
 
@@ -113,5 +113,4 @@ in [SECURITY.md](SECURITY.md).
 Idle: well under €1/month (Cosmos serverless minimum + SWA Free).
 Per generated lesson: ~$0.0005 on `gpt-4o-mini` (well within the daily $
 cap above).
-
 
