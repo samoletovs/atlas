@@ -427,6 +427,16 @@ main {
   margin: 0;
 }
 
+.card-review {
+  border-style: dashed;
+}
+
+.review-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 /* ============================================================ */
 /* Reader */
 /* ============================================================ */
