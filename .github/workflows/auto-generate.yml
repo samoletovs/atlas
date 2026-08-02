@@ -10,7 +10,10 @@ name: Auto-generate atlas lessons
 
 on:
   schedule:
-    - cron: '0 */4 * * *'  # every 4 hours at the top of the hour
+    # Every 8 hours. This cron is only a heartbeat - whether a repo is actually due is
+    # decided by its own interval on the Cosmos `repos` doc, so a tighter schedule bought
+    # nothing but no-op runs, each still paying for a checkout and a pip install.
+    - cron: '0 */8 * * *'
   workflow_dispatch:
 
 permissions:
