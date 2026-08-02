@@ -1,15 +1,22 @@
 name: "Copilot: Triage and assign issues"
 
 on:
+  # `opened` only. This job writes labels itself — the emoji auto-label, then the decision
+  # label — so listening to `labeled` made it re-trigger itself: every write cancelled the
+  # in-flight run through cancel-in-progress and started a fresh one, which called the model
+  # again. Measured 2026-08-01 across the fleet: ~4 runs per issue, 74% of them cancelled.
+  # Triage is a judgement made once, when the issue arrives.
   issues:
-    types: [opened, labeled]
+    types: [opened]
 
 jobs:
   triage:
-    # Skip if already triaged
+    # Skip if already triaged. `needs-review` belongs here too: it is what we fall back to
+    # when the model is unreachable or unsure, so without it a re-run would keep retrying.
     if: >-
       !contains(github.event.issue.labels.*.name, 'approved') &&
       !contains(github.event.issue.labels.*.name, 'rejected') &&
+      !contains(github.event.issue.labels.*.name, 'needs-review') &&
       !contains(github.event.issue.labels.*.name, 'needs-info')
     runs-on: ubuntu-latest
     concurrency:
