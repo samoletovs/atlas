@@ -1471,6 +1471,97 @@ main {
   gap: 0.33rem;
 }
 
+/* Ghost nodes (suggested but ungenerated topics) */
+.atlas-node-ghost {
+  cursor: pointer;
+}
+
+.atlas-node-ghost circle {
+  fill: transparent;
+  stroke: var(--fg-subtle);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  opacity: 0.6;
+}
+
+.atlas-node-ghost:hover circle,
+.atlas-node-ghost:focus-visible circle {
+  stroke: var(--accent);
+  opacity: 0.9;
+}
+
+.atlas-node-ghost .atlas-node-label {
+  fill: var(--fg-subtle);
+  font-style: italic;
+}
+
+/* Generate-new-topic form in atlas header */
+.atlas-generate-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.atlas-generate-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.7rem;
+}
+
+.atlas-generate-input::placeholder {
+  color: var(--fg-subtle);
+}
+
+.atlas-generate-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.atlas-generate-btn {
+  font-size: 0.875rem;
+  padding: 0.4rem 0.85rem;
+  white-space: nowrap;
+}
+
+.atlas-ghost-generate {
+  margin-top: 0.75rem;
+}
+
+.atlas-generate-error {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+}
+
+/* Suggested topics section (list view) */
+.topic-atlas-suggested {
+  margin-top: 1.5rem;
+}
+
+.topic-atlas-suggested-heading {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+  color: var(--fg-muted);
+}
+
+.topic-atlas-list-item-ghost {
+  border-style: dashed;
+  opacity: 0.8;
+}
+
+.topic-atlas-pill-ghost {
+  color: var(--fg-subtle);
+  border-color: var(--fg-subtle);
+  font-style: italic;
+}
+
 /* ============================================================ */
 /* Ask-more chat (LessonReader follow-up)                       */
 /* ============================================================ */
