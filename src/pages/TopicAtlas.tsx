@@ -4,13 +4,16 @@
  * come from `suggested_next` cross-links between lessons. Clicking a
  * topic opens its newest published lesson.
  *
+ * "Ghost" nodes represent topics referenced in `suggested_next` that have
+ * no lessons yet — owners can click them to generate a lesson inline.
+ *
  * Layout: tiny dependency-free force simulation that runs to a frozen
  * state on mount, then renders as a static SVG. Re-runs only when the
  * repo / language changes.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lesson, listLessons } from '../lib/api';
+import { Lesson, listLessons, generateLessonNow } from '../lib/api';
 import { useLang, useRepo } from '../App';
 
 interface TopicNode {
@@ -26,6 +29,13 @@ interface TopicNode {
   vy: number;
   /** Visual radius in px, derived from `count`. */
   r: number;
+  /**
+   * True for topics that appear in `suggested_next` but have no lessons yet.
+   * These render as ghost (dashed) nodes; owners can generate them inline.
+   */
+  isGhost?: boolean;
+  /** Best human-readable title for ghost nodes (from the suggestion entry). */
+  ghostTitle?: string;
 }
 
 interface TopicEdge {
@@ -73,7 +83,28 @@ function buildGraph(lessons: Lesson[]): { nodes: TopicNode[]; edges: TopicEdge[]
     }
   }
 
-  // Edges from suggested_next, but only when both endpoints exist as topics.
+  // Collect suggested topics that are not yet their own lessons (ghost nodes).
+  for (const l of lessons) {
+    for (const s of l.suggested_next ?? []) {
+      const dst = (s.topic ?? '').trim();
+      if (!dst || byTopic.has(dst)) continue;
+      byTopic.set(dst, {
+        topic: dst,
+        count: 0,
+        lessons: [],
+        primary: null,
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        r: MIN_R * 0.75,
+        isGhost: true,
+        ghostTitle: (s.title ?? '').trim() || undefined,
+      });
+    }
+  }
+
+  // Edges from suggested_next — now valid for both real and ghost endpoints.
   const edgeKey = (a: string, b: string) => (a < b ? `${a}\u0001${b}` : `${b}\u0001${a}`);
   const seen = new Map<string, TopicEdge>();
   for (const l of lessons) {
@@ -93,11 +124,13 @@ function buildGraph(lessons: Lesson[]): { nodes: TopicNode[]; edges: TopicEdge[]
   }
 
   const nodes = Array.from(byTopic.values());
-  // Radius scales with sqrt(count) so a topic with 9 lessons isn't 9× a topic with 1.
-  const maxCount = Math.max(1, ...nodes.map((n) => n.count));
+  // Radius scales with sqrt(count) for real nodes; ghost nodes keep their fixed r.
+  const maxCount = Math.max(1, ...nodes.filter((n) => !n.isGhost).map((n) => n.count));
   for (const n of nodes) {
-    const t = Math.sqrt(n.count) / Math.sqrt(maxCount);
-    n.r = MIN_R + (MAX_R - MIN_R) * t;
+    if (!n.isGhost) {
+      const t = Math.sqrt(n.count) / Math.sqrt(maxCount);
+      n.r = MIN_R + (MAX_R - MIN_R) * t;
+    }
   }
 
   // Seed positions on a circle so the sim starts spread out, not stacked.
@@ -194,13 +227,17 @@ function formatTopic(s: string): string {
 
 export function TopicAtlas() {
   const { lang } = useLang();
-  const { repoId, allowedRepos } = useRepo();
+  const { repoId, allowedRepos, role } = useRepo();
+  const isOwner = role === 'owner';
   const navigate = useNavigate();
   const [lessons, setLessons] = useState<Lesson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [mode, setMode] = useState<'graph' | 'list'>('graph');
+  const [generatingTopic, setGeneratingTopic] = useState<string | null>(null);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [newTopicInput, setNewTopicInput] = useState('');
 
   useEffect(() => {
     setLessons(null);
@@ -222,8 +259,52 @@ export function TopicAtlas() {
       setSelected(null);
       return;
     }
-    setSelected((prev) => (prev && graph.nodes.some((n) => n.topic === prev) ? prev : graph.nodes[0].topic));
+    setSelected((prev) => {
+      if (prev && graph.nodes.some((n) => n.topic === prev)) return prev;
+      const firstReal = graph.nodes.find((n) => !n.isGhost);
+      return firstReal ? firstReal.topic : graph.nodes[0].topic;
+    });
   }, [graph]);
+
+  async function handleGenerateGhost(node: TopicNode) {
+    if (!isOwner || generatingTopic) return;
+    const title = node.ghostTitle || formatTopic(node.topic);
+    setGeneratingTopic(node.topic);
+    setGenerateError(null);
+    try {
+      const generated = await generateLessonNow(
+        { title, topic: node.topic, language: lang as 'en' | 'ru' },
+        repoId,
+      );
+      navigate(`/lesson/${generated.id}`);
+    } catch (e) {
+      setGenerateError(e instanceof Error ? e.message : String(e));
+      setGeneratingTopic(null);
+    }
+  }
+
+  async function handleGenerateNewTopic(e: { preventDefault(): void }) {
+    e.preventDefault();
+    const input = newTopicInput.trim();
+    if (!input || !isOwner || generatingTopic) return;
+    const topic = input
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      || input;
+    setGeneratingTopic(topic);
+    setGenerateError(null);
+    try {
+      const generated = await generateLessonNow(
+        { title: input, topic, language: lang as 'en' | 'ru' },
+        repoId,
+      );
+      navigate(`/lesson/${generated.id}`);
+    } catch (e) {
+      setGenerateError(e instanceof Error ? e.message : String(e));
+      setGeneratingTopic(null);
+    }
+  }
 
   if (allowedRepos.length === 0) {
     return (
@@ -253,7 +334,9 @@ export function TopicAtlas() {
     );
   }
 
-  const sortedNodes = [...graph.nodes].sort((a, b) => b.count - a.count);
+  const realNodes = graph.nodes.filter((n) => !n.isGhost);
+  const ghostNodes = graph.nodes.filter((n) => n.isGhost);
+  const sortedNodes = [...realNodes].sort((a, b) => b.count - a.count);
   const activeTopic = hovered ?? selected;
   const activeNode = activeTopic ? graph.nodes.find((n) => n.topic === activeTopic) ?? null : null;
 
@@ -285,14 +368,19 @@ export function TopicAtlas() {
         </p>
         <div className="topic-atlas-stats" aria-label="Atlas summary">
           <span className="atlas-stat">
-            <strong>{graph.nodes.length}</strong> topics
+            <strong>{realNodes.length}</strong> topics
           </span>
           <span className="atlas-stat">
-            <strong>{graph.nodes.reduce((acc, n) => acc + n.count, 0)}</strong> lessons
+            <strong>{realNodes.reduce((acc, n) => acc + n.count, 0)}</strong> lessons
           </span>
           <span className="atlas-stat">
             <strong>{graph.edges.length}</strong> connections
           </span>
+          {ghostNodes.length > 0 && (
+            <span className="atlas-stat">
+              <strong>{ghostNodes.length}</strong> suggested
+            </span>
+          )}
         </div>
         <div className="topic-atlas-quick-list" aria-label="Top topics">
           {sortedNodes.slice(0, 10).map((n) => (
@@ -310,6 +398,32 @@ export function TopicAtlas() {
             </button>
           ))}
         </div>
+        {isOwner && (
+          <form className="atlas-generate-form" onSubmit={(e) => void handleGenerateNewTopic(e)}>
+            <input
+              type="text"
+              className="atlas-generate-input"
+              placeholder="Generate lesson for any topic…"
+              value={newTopicInput}
+              onChange={(e) => setNewTopicInput(e.target.value)}
+              disabled={!!generatingTopic}
+              maxLength={200}
+              aria-label="New topic name"
+            />
+            <button
+              type="submit"
+              className="btn-primary atlas-generate-btn"
+              disabled={!!generatingTopic || !newTopicInput.trim()}
+            >
+              {generatingTopic && !graph.nodes.some((n) => n.topic === generatingTopic)
+                ? 'Generating…'
+                : 'Generate →'}
+            </button>
+          </form>
+        )}
+        {generateError && (
+          <p className="error-inline atlas-generate-error">{generateError}</p>
+        )}
       </header>
 
       {mode === 'graph' ? (
@@ -343,12 +457,17 @@ export function TopicAtlas() {
               <g className="atlas-nodes">
                 {graph.nodes.map((n) => {
                   const dimmed = activeTopic != null && activeTopic !== n.topic;
+                  const nodeClass = `atlas-node${dimmed ? ' dimmed' : ''}${
+                    n.isGhost
+                      ? ' atlas-node-ghost'
+                      : n.primary
+                      ? ' has-primary'
+                      : ' atlas-node-queued'
+                  }`;
                   return (
                     <g
                       key={n.topic}
-                      className={`atlas-node${dimmed ? ' dimmed' : ''}${
-                        n.primary ? ' has-primary' : ' atlas-node-queued'
-                      }`}
+                      className={nodeClass}
                       transform={`translate(${n.x}, ${n.y})`}
                       onMouseEnter={() => setHovered(n.topic)}
                       onMouseLeave={() => setHovered(null)}
@@ -356,7 +475,11 @@ export function TopicAtlas() {
                       onClick={() => setSelected(n.topic)}
                       role="button"
                       tabIndex={0}
-                      aria-label={`${formatTopic(n.topic)}, ${n.count} lessons`}
+                      aria-label={
+                        n.isGhost
+                          ? `${n.ghostTitle || formatTopic(n.topic)}, suggested (no lesson yet)`
+                          : `${formatTopic(n.topic)}, ${n.count} lessons`
+                      }
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault();
@@ -370,11 +493,13 @@ export function TopicAtlas() {
                         textAnchor="middle"
                         className="atlas-node-label"
                       >
-                        {formatTopic(n.topic)}
+                        {n.isGhost ? (n.ghostTitle || formatTopic(n.topic)) : formatTopic(n.topic)}
                       </text>
-                      <text y={4} textAnchor="middle" className="atlas-node-count">
-                        {n.count}
-                      </text>
+                      {!n.isGhost && (
+                        <text y={4} textAnchor="middle" className="atlas-node-count">
+                          {n.count}
+                        </text>
+                      )}
                     </g>
                   );
                 })}
@@ -384,13 +509,71 @@ export function TopicAtlas() {
 
           <aside className="topic-atlas-detail">
             {activeNode ? (
-              <>
-                <h3>{formatTopic(activeNode.topic)}</h3>
-                <p className="muted small">
-                  {activeNode.count} lesson{activeNode.count === 1 ? '' : 's'}
-                </p>
+              activeNode.isGhost ? (
+                <>
+                  <h3>{activeNode.ghostTitle || formatTopic(activeNode.topic)}</h3>
+                  <p className="muted small">No lesson yet — suggested by existing topics.</p>
+                  {isOwner ? (
+                    <button
+                      type="button"
+                      className="btn-primary atlas-ghost-generate"
+                      onClick={() => void handleGenerateGhost(activeNode)}
+                      disabled={!!generatingTopic}
+                    >
+                      {generatingTopic === activeNode.topic ? (
+                        <>
+                          <span className="spinner" aria-hidden="true" /> Generating…
+                        </>
+                      ) : (
+                        'Generate lesson →'
+                      )}
+                    </button>
+                  ) : (
+                    <p className="muted small">Coming soon.</p>
+                  )}
+                  {generateError && generatingTopic === null && (
+                    <p className="error-inline">{generateError}</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3>{formatTopic(activeNode.topic)}</h3>
+                  <p className="muted small">
+                    {activeNode.count} lesson{activeNode.count === 1 ? '' : 's'}
+                  </p>
+                  <ul>
+                    {activeNode.lessons.slice(0, 6).map((l) => (
+                      <li key={l.id}>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          onClick={() => navigate(`/lesson/${l.id}`)}
+                          disabled={l.status === 'queued'}
+                        >
+                          {l.title}
+                          {l.status === 'queued' && ' (queued)'}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )
+            ) : (
+              <p className="muted small">Select a topic to see lessons.</p>
+            )}
+          </aside>
+        </div>
+      ) : (
+        <>
+          <section className="topic-atlas-list" aria-label="Topic list">
+            {sortedNodes.map((n) => (
+              <article key={n.topic} className="topic-atlas-list-item">
+                <header className="topic-atlas-list-head">
+                  <h3>{formatTopic(n.topic)}</h3>
+                  <span className="topic-atlas-pill">{n.count} lesson{n.count === 1 ? '' : 's'}</span>
+                </header>
                 <ul>
-                  {activeNode.lessons.slice(0, 6).map((l) => (
+                  {n.lessons.slice(0, 4).map((l) => (
                     <li key={l.id}>
                       <button
                         type="button"
@@ -404,38 +587,48 @@ export function TopicAtlas() {
                     </li>
                   ))}
                 </ul>
-              </>
-            ) : (
-              <p className="muted small">Select a topic to see lessons.</p>
-            )}
-          </aside>
-        </div>
-      ) : (
-        <section className="topic-atlas-list" aria-label="Topic list">
-          {sortedNodes.map((n) => (
-            <article key={n.topic} className="topic-atlas-list-item">
-              <header className="topic-atlas-list-head">
-                <h3>{formatTopic(n.topic)}</h3>
-                <span className="topic-atlas-pill">{n.count} lesson{n.count === 1 ? '' : 's'}</span>
-              </header>
-              <ul>
-                {n.lessons.slice(0, 4).map((l) => (
-                  <li key={l.id}>
-                    <button
-                      type="button"
-                      className="btn-link"
-                      onClick={() => navigate(`/lesson/${l.id}`)}
-                      disabled={l.status === 'queued'}
-                    >
-                      {l.title}
-                      {l.status === 'queued' && ' (queued)'}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ))}
-        </section>
+              </article>
+            ))}
+          </section>
+          {ghostNodes.length > 0 && (
+            <section className="topic-atlas-suggested" aria-label="Suggested topics">
+              <h3 className="topic-atlas-suggested-heading">
+                Suggested topics
+                <span className="muted"> — referenced but not yet generated</span>
+              </h3>
+              <div className="topic-atlas-list">
+                {ghostNodes.map((n) => {
+                  const label = n.ghostTitle || formatTopic(n.topic);
+                  const busy = generatingTopic === n.topic;
+                  return (
+                    <article key={n.topic} className="topic-atlas-list-item topic-atlas-list-item-ghost">
+                      <header className="topic-atlas-list-head">
+                        <h3>{label}</h3>
+                        <span className="topic-atlas-pill topic-atlas-pill-ghost">suggested</span>
+                      </header>
+                      {isOwner && (
+                        <button
+                          type="button"
+                          className="btn-link next-generate"
+                          onClick={() => void handleGenerateGhost(n)}
+                          disabled={!!generatingTopic}
+                        >
+                          {busy ? (
+                            <>
+                              <span className="spinner" aria-hidden="true" /> Generating…
+                            </>
+                          ) : (
+                            'Generate lesson →'
+                          )}
+                        </button>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   );
