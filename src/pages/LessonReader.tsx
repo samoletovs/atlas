@@ -173,6 +173,14 @@ export function LessonReader() {
     setLesson(updated);
   }
 
+  async function handleFeedback(kind: 'up' | 'down') {
+    if (!lesson) return;
+    const action =
+      lesson.feedback === kind ? 'feedback_clear' : kind === 'up' ? 'feedback_up' : 'feedback_down';
+    const updated = await updateLessonState(lesson.id, action, repoId);
+    setLesson(updated);
+  }
+
   async function handleQueue(idx: number, suggestion: Lesson['suggested_next'][number]) {
     if (!lesson) return;
     setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'generating' } }));
@@ -408,6 +416,26 @@ export function LessonReader() {
         <button className="btn-secondary" onClick={handleSaveToggle}>
           {lesson.saved ? 'Saved ✓' : 'Save'}
         </button>
+        <span className="feedback-group" role="group" aria-label="Lesson feedback">
+          <button
+            type="button"
+            className={`btn-feedback${lesson.feedback === 'up' ? ' btn-feedback-active' : ''}`}
+            onClick={() => handleFeedback('up')}
+            aria-pressed={lesson.feedback === 'up'}
+            title="This lesson was helpful"
+          >
+            👍
+          </button>
+          <button
+            type="button"
+            className={`btn-feedback${lesson.feedback === 'down' ? ' btn-feedback-active' : ''}`}
+            onClick={() => handleFeedback('down')}
+            aria-pressed={lesson.feedback === 'down'}
+            title="This lesson needs work"
+          >
+            👎
+          </button>
+        </span>
       </footer>
     </article>
   );

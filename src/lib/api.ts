@@ -89,6 +89,7 @@ export interface Lesson {
   created_at: string;
   read_at?: string | null;
   saved?: boolean;
+  feedback?: 'up' | 'down' | null;
 }
 
 /** A lesson enriched with adaptive-recommendation metadata. */
@@ -155,7 +156,7 @@ export async function getLesson(id: string, repoId?: string): Promise<Lesson> {
 
 export async function updateLessonState(
   id: string,
-  action: 'mark_read' | 'save' | 'unsave',
+  action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down' | 'feedback_clear',
   repoId?: string,
 ): Promise<Lesson> {
   const res = await fetch(
