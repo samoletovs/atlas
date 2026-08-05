@@ -873,6 +873,32 @@ main {
   border-color: var(--fg-muted);
 }
 
+.feedback-group {
+  display: inline-flex;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.btn-feedback {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+}
+
+.btn-feedback:hover {
+  border-color: var(--fg-muted);
+}
+
+.btn-feedback-active {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
 /* ============================================================ */
 /* About */
 /* ============================================================ */

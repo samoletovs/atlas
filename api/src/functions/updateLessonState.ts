@@ -1,8 +1,8 @@
 /**
  * POST /api/lessons/{id}/state?repoId=<id>
- * Body: { action: 'mark_read' | 'save' | 'unsave' }
+ * Body: { action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down' | 'feedback_clear' }
  *
- * All three actions write to `lessonProgress` (per-reader). The lesson doc
+ * All actions write to `lessonProgress` (per-reader). The lesson doc
  * itself in `lessons_v2` is not modified — its `status` is the catalog state
  * (queued / drafting / published / archived), not the per-reader read state.
  */
@@ -16,7 +16,7 @@ import {
 import { resolveRequest, isHttpResponse } from '../shared/auth.js';
 
 interface StateBody {
-  action: 'mark_read' | 'save' | 'unsave';
+  action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down' | 'feedback_clear';
 }
 
 export async function updateLessonState(
@@ -65,6 +65,7 @@ export async function updateLessonState(
     status: 'unread',
     readAt: null,
     saved: false,
+    feedback: null,
   };
 
   if (body.action === 'mark_read') {
@@ -74,6 +75,12 @@ export async function updateLessonState(
     next.saved = true;
   } else if (body.action === 'unsave') {
     next.saved = false;
+  } else if (body.action === 'feedback_up') {
+    next.feedback = 'up';
+  } else if (body.action === 'feedback_down') {
+    next.feedback = 'down';
+  } else if (body.action === 'feedback_clear') {
+    next.feedback = null;
   } else {
     return { status: 400, jsonBody: { error: `Unknown action ${body.action}` } };
   }
@@ -89,6 +96,7 @@ export async function updateLessonState(
       status: next.status === 'read' ? 'read' : lesson.status,
       read_at: next.readAt ?? null,
       saved: next.saved ?? false,
+      feedback: next.feedback ?? null,
     },
   };
 }

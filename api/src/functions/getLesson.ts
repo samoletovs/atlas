@@ -48,6 +48,7 @@ export async function getLesson(
         status: progress?.status === 'read' ? 'read' : lesson.status,
         read_at: progress?.readAt ?? null,
         saved: progress?.saved ?? false,
+        feedback: progress?.feedback ?? null,
       },
     };
   } catch (err: unknown) {

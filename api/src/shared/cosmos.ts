@@ -158,6 +158,7 @@ export interface LessonProgress {
   status: 'unread' | 'read';
   readAt?: string | null;
   saved?: boolean;
+  feedback?: 'up' | 'down' | null;
 }
 
 export interface RepoShare {
