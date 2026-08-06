@@ -56,9 +56,13 @@ jobs:
           ASSIGNED=0
           for NUM in $ISSUES; do
             echo "Assigning Copilot to ${{ github.repository }}#$NUM"
-            if gh issue edit "$NUM" \
-                 --repo "${{ github.repository }}" \
-                 --add-assignee "Copilot"; then
+            # The coding agent resolves under the login `copilot-swe-agent`.
+            # `--add-assignee Copilot` fails with "'Copilot' not found" outside
+            # the web UI, so try the bot login first and fall back.
+            if gh issue edit "$NUM" --repo "${{ github.repository }}" \
+                 --add-assignee "copilot-swe-agent" 2>/dev/null \
+               || gh issue edit "$NUM" --repo "${{ github.repository }}" \
+                    --add-assignee "Copilot"; then
               ASSIGNED=$((ASSIGNED + 1))
             else
               echo "::warning::Could not assign Copilot to #$NUM — the Copilot coding agent may not be enabled for this repo"
