@@ -30,6 +30,36 @@ jobs:
           submodules: true
           lfs: false
 
+      # Build explicitly BEFORE handing off to Oryx. When Oryx runs the build
+      # itself and `npm run build` fails, it does not fail the job — it falls
+      # back to uploading the source directory, so the deploy reports success
+      # while production silently serves an unbuilt index.html. That is exactly
+      # how a tsc error shipped a broken site unnoticed. Building here makes a
+      # broken build fail the workflow loudly, and `skip_app_build` stops Oryx
+      # from rebuilding (and re-masking) it.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          # A successful build must produce a real bundle, not the source
+          # template. Fail here rather than deploying a broken site.
+          test -f dist/index.html || { echo "::error::dist/index.html missing — build did not run"; exit 1; }
+          if grep -q '/src/main.tsx' dist/index.html; then
+            echo "::error::dist/index.html still references /src/main.tsx — unbuilt source would be deployed"
+            exit 1
+          fi
+          test -f dist/manifest.webmanifest || { echo "::error::dist/manifest.webmanifest missing — PWA build incomplete"; exit 1; }
+          echo "build output verified"
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
@@ -38,6 +68,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           skip_deploy_on_missing_secrets: true
+          skip_app_build: true
           app_location: "/"
           api_location: "api"
           output_location: "dist"
