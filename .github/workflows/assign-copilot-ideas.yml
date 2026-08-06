@@ -1,0 +1,72 @@
+name: "Assign Copilot to approved idea issues"
+
+# Triage labels an idea `approved`, but labelling alone does not make anything
+# happen — an approved issue with no assignee just sits there. That gap is how
+# dozens of approved ideas accumulated across the workspace untouched.
+#
+# This workflow closes the loop: every approved, unassigned idea issue gets the
+# Copilot coding agent assigned so it is actually picked up.
+#
+# Gated on `approved` deliberately. Issues still carrying `needs-approval` are
+# waiting on a human product decision and must NOT be auto-assigned.
+#
+# NOTE ON TOKENS: this must run per-repo with that repo's own GITHUB_TOKEN.
+# The installation token is the only credential that can add the Copilot bot
+# via replaceActorsForAssignable — fine-grained PATs do not work, which is why
+# this is a per-repo workflow rather than one central cross-repo sweep.
+
+on:
+  schedule:
+    - cron: '35 7 * * *'   # daily, after nauro-autopilot (07:00) and triage
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: assign-copilot-ideas
+  cancel-in-progress: false
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Assign Copilot to approved, unassigned idea issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Approved ideas that nobody (and nothing) is working on yet.
+          ISSUES=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --label idea \
+            --label approved \
+            --state open \
+            --limit 100 \
+            --json number,assignees \
+            --jq '[.[] | select((.assignees | length) == 0) | .number] | .[]' 2>/dev/null || true)
+
+          if [ -z "$ISSUES" ]; then
+            echo "No approved, unassigned idea issues found."
+            exit 0
+          fi
+
+          ASSIGNED=0
+          for NUM in $ISSUES; do
+            echo "Assigning Copilot to ${{ github.repository }}#$NUM"
+            if gh issue edit "$NUM" \
+                 --repo "${{ github.repository }}" \
+                 --add-assignee "Copilot"; then
+              ASSIGNED=$((ASSIGNED + 1))
+            else
+              echo "::warning::Could not assign Copilot to #$NUM — the Copilot coding agent may not be enabled for this repo"
+            fi
+          done
+
+          {
+            echo "## Copilot idea assignment"
+            echo ""
+            echo "Assigned: ${ASSIGNED}"
+          } >> "$GITHUB_STEP_SUMMARY"
