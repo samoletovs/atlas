@@ -23,6 +23,9 @@ interface LessonResponse extends Omit<LessonV2, 'status'> {
   read_at?: string | null;
   saved?: boolean;
   feedback?: 'up' | 'down' | null;
+  rating?: number | null;
+  feedback_comment?: string | null;
+  feedback_at?: string | null;
 }
 
 function hydrate(
@@ -35,6 +38,9 @@ function hydrate(
     read_at: progress?.readAt ?? null,
     saved: progress?.saved ?? false,
     feedback: progress?.feedback ?? null,
+    rating: progress?.rating ?? null,
+    feedback_comment: progress?.feedbackComment ?? null,
+    feedback_at: progress?.feedbackAt ?? null,
   };
 }
 

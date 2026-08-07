@@ -49,6 +49,9 @@ export async function getLesson(
         read_at: progress?.readAt ?? null,
         saved: progress?.saved ?? false,
         feedback: progress?.feedback ?? null,
+        rating: progress?.rating ?? null,
+        feedback_comment: progress?.feedbackComment ?? null,
+        feedback_at: progress?.feedbackAt ?? null,
       },
     };
   } catch (err: unknown) {
