@@ -460,11 +460,7 @@ export function LessonReader() {
 
       <section className="lesson-feedback">
         <h4>How was this lesson?</h4>
-        <div
-          className="rating-stars"
-          role="radiogroup"
-          aria-label="Rate this lesson from 1 to 5"
-        >
+        <div className="rating-stars" role="group" aria-label="Rate this lesson from 1 to 5">
           {[1, 2, 3, 4, 5].map((value) => {
             const active = (lesson.rating ?? 0) >= value;
             return (
@@ -474,8 +470,7 @@ export function LessonReader() {
                 className={`btn-star${active ? ' btn-star-active' : ''}`}
                 onClick={() => handleRate(value)}
                 disabled={feedbackBusy}
-                role="radio"
-                aria-checked={lesson.rating === value}
+                aria-pressed={lesson.rating === value}
                 aria-label={`${value} star${value === 1 ? '' : 's'}`}
                 title={`${value} / 5`}
               >
