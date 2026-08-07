@@ -6,8 +6,11 @@ import {
   listLessons,
   generateLessonNow,
   updateLessonState,
+  rateLesson,
+  commentLesson,
   askLesson,
   AskChatTurn,
+  FEEDBACK_COMMENT_MAX,
 } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
 import { markRecentlyRead } from '../lib/recentlyRead';
@@ -44,6 +47,12 @@ export function LessonReader() {
   const [chatError, setChatError] = useState<string | null>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  // Interactive feedback: 1-5 stars + an optional free-text comment.
+  const [commentDraft, setCommentDraft] = useState('');
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     setLesson(null);
@@ -51,10 +60,18 @@ export function LessonReader() {
     setChatTurns([]);
     setChatDraft('');
     setChatError(null);
+    setCommentDraft('');
+    setFeedbackError(null);
+    setFeedbackSaved(false);
     getLesson(id, repoId)
       .then(setLesson)
       .catch((e: Error) => setError(e.message));
   }, [id, repoId]);
+
+  // Seed the comment box with whatever the reader saved previously.
+  useEffect(() => {
+    setCommentDraft(lesson?.feedback_comment ?? '');
+  }, [lesson?.id, lesson?.feedback_comment]);
 
   // Fetch library (in current language) for cross-linking suggested_next.
   // Use 'all' so already-read lessons are still linkable.
@@ -179,6 +196,38 @@ export function LessonReader() {
       lesson.feedback === kind ? 'feedback_clear' : kind === 'up' ? 'feedback_up' : 'feedback_down';
     const updated = await updateLessonState(lesson.id, action, repoId);
     setLesson(updated);
+  }
+
+  async function handleRate(value: number) {
+    if (!lesson || feedbackBusy) return;
+    const next = lesson.rating === value ? null : value;
+    setFeedbackBusy(true);
+    setFeedbackError(null);
+    setFeedbackSaved(false);
+    try {
+      setLesson(await rateLesson(lesson.id, next, repoId));
+      setFeedbackSaved(true);
+    } catch (e) {
+      setFeedbackError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFeedbackBusy(false);
+    }
+  }
+
+  async function handleCommentSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!lesson || feedbackBusy) return;
+    setFeedbackBusy(true);
+    setFeedbackError(null);
+    setFeedbackSaved(false);
+    try {
+      setLesson(await commentLesson(lesson.id, commentDraft.trim(), repoId));
+      setFeedbackSaved(true);
+    } catch (e) {
+      setFeedbackError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFeedbackBusy(false);
+    }
   }
 
   async function handleQueue(idx: number, suggestion: Lesson['suggested_next'][number]) {
@@ -407,6 +456,57 @@ export function LessonReader() {
             {chatBusy ? 'Asking…' : 'Ask'}
           </button>
         </form>
+      </section>
+
+      <section className="lesson-feedback">
+        <h4>How was this lesson?</h4>
+        <div className="rating-stars" role="group" aria-label="Rate this lesson from 1 to 5">
+          {[1, 2, 3, 4, 5].map((value) => {
+            const active = (lesson.rating ?? 0) >= value;
+            return (
+              <button
+                key={value}
+                type="button"
+                className={`btn-star${active ? ' btn-star-active' : ''}`}
+                onClick={() => handleRate(value)}
+                disabled={feedbackBusy}
+                aria-pressed={lesson.rating === value}
+                aria-label={`${value} star${value === 1 ? '' : 's'}`}
+                title={`${value} / 5`}
+              >
+                {active ? '★' : '☆'}
+              </button>
+            );
+          })}
+          {lesson.rating != null && (
+            <span className="muted small rating-value">{lesson.rating}/5</span>
+          )}
+        </div>
+        <form className="feedback-form" onSubmit={handleCommentSave}>
+          <textarea
+            value={commentDraft}
+            onChange={(e) => {
+              setCommentDraft(e.target.value);
+              setFeedbackSaved(false);
+            }}
+            placeholder="What worked, what didn’t? (optional)"
+            rows={2}
+            maxLength={FEEDBACK_COMMENT_MAX}
+            disabled={feedbackBusy}
+            aria-label="Lesson feedback comment"
+          />
+          <button
+            type="submit"
+            className="btn-secondary"
+            disabled={feedbackBusy || commentDraft.trim() === (lesson.feedback_comment ?? '')}
+          >
+            {feedbackBusy ? 'Saving…' : 'Save feedback'}
+          </button>
+        </form>
+        {feedbackError && <div className="form-error">{feedbackError}</div>}
+        {!feedbackError && feedbackSaved && (
+          <p className="muted small">Thanks — your feedback is saved.</p>
+        )}
       </section>
 
       <footer className="reader-actions">

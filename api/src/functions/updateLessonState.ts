@@ -1,6 +1,10 @@
 /**
  * POST /api/lessons/{id}/state?repoId=<id>
- * Body: { action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down' | 'feedback_clear' }
+ * Body: { action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down'
+ *                 | 'feedback_clear' | 'set_rating' | 'set_comment',
+ *         rating?: 1..5 | null,   // required for 'set_rating' (null clears it)
+ *         comment?: string | null // required for 'set_comment' (empty/null clears it)
+ *       }
  *
  * All actions write to `lessonProgress` (per-reader). The lesson doc
  * itself in `lessons_v2` is not modified — its `status` is the catalog state
@@ -12,11 +16,22 @@ import {
   lessonProgressContainer,
   LessonV2,
   LessonProgress,
+  FEEDBACK_COMMENT_MAX,
 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse } from '../shared/auth.js';
 
 interface StateBody {
-  action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down' | 'feedback_clear';
+  action:
+    | 'mark_read'
+    | 'save'
+    | 'unsave'
+    | 'feedback_up'
+    | 'feedback_down'
+    | 'feedback_clear'
+    | 'set_rating'
+    | 'set_comment';
+  rating?: number | null;
+  comment?: string | null;
 }
 
 export async function updateLessonState(
@@ -66,6 +81,9 @@ export async function updateLessonState(
     readAt: null,
     saved: false,
     feedback: null,
+    rating: null,
+    feedbackComment: null,
+    feedbackAt: null,
   };
 
   if (body.action === 'mark_read') {
@@ -81,6 +99,30 @@ export async function updateLessonState(
     next.feedback = 'down';
   } else if (body.action === 'feedback_clear') {
     next.feedback = null;
+  } else if (body.action === 'set_rating') {
+    const rating = body.rating;
+    if (rating === null || rating === undefined) {
+      next.rating = null;
+    } else if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return { status: 400, jsonBody: { error: 'rating must be an integer 1-5, or null' } };
+    } else {
+      next.rating = rating;
+    }
+    next.feedbackAt = new Date().toISOString();
+  } else if (body.action === 'set_comment') {
+    const raw = body.comment;
+    if (raw !== null && raw !== undefined && typeof raw !== 'string') {
+      return { status: 400, jsonBody: { error: 'comment must be a string or null' } };
+    }
+    const comment = (raw ?? '').trim();
+    if (comment.length > FEEDBACK_COMMENT_MAX) {
+      return {
+        status: 400,
+        jsonBody: { error: `comment must be at most ${FEEDBACK_COMMENT_MAX} characters` },
+      };
+    }
+    next.feedbackComment = comment.length > 0 ? comment : null;
+    next.feedbackAt = new Date().toISOString();
   } else {
     return { status: 400, jsonBody: { error: `Unknown action ${body.action}` } };
   }
@@ -97,6 +139,9 @@ export async function updateLessonState(
       read_at: next.readAt ?? null,
       saved: next.saved ?? false,
       feedback: next.feedback ?? null,
+      rating: next.rating ?? null,
+      feedback_comment: next.feedbackComment ?? null,
+      feedback_at: next.feedbackAt ?? null,
     },
   };
 }

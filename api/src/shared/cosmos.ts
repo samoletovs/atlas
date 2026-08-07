@@ -159,7 +159,16 @@ export interface LessonProgress {
   readAt?: string | null;
   saved?: boolean;
   feedback?: 'up' | 'down' | null;
+  /** Optional 1–5 star rating left by the reader. */
+  rating?: number | null;
+  /** Optional free-text comment left by the reader (trimmed, max 1000 chars). */
+  feedbackComment?: string | null;
+  /** ISO timestamp of the last rating/comment change. */
+  feedbackAt?: string | null;
 }
+
+/** Maximum length accepted for a free-text lesson feedback comment. */
+export const FEEDBACK_COMMENT_MAX = 1000;
 
 export interface RepoShare {
   id: string;            // `${repoId}_${githubLogin}`
