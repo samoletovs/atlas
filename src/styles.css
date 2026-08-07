@@ -1688,6 +1688,86 @@ main {
 }
 
 /* ============================================================ */
+/* Interactive lesson feedback (stars + comment)                */
+/* ============================================================ */
+
+.lesson-feedback {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-sans);
+}
+
+.lesson-feedback h4 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+}
+
+.rating-stars {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.btn-star {
+  font-size: 1.3rem;
+  line-height: 1;
+  padding: 0.15rem 0.2rem;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.btn-star:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.btn-star-active {
+  color: var(--accent);
+}
+
+.btn-star:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.rating-value {
+  margin-left: 0.4rem;
+}
+
+.feedback-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.feedback-form textarea {
+  flex: 1;
+  min-height: 2.5rem;
+  resize: vertical;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.feedback-form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.feedback-form button {
+  flex-shrink: 0;
+}
+
+/* ============================================================ */
 /* Settings page + GitHub PAT card                              */
 /* ============================================================ */
 

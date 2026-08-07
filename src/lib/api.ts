@@ -90,6 +90,12 @@ export interface Lesson {
   read_at?: string | null;
   saved?: boolean;
   feedback?: 'up' | 'down' | null;
+  /** 1–5 star rating left by the current reader, null when unrated. */
+  rating?: number | null;
+  /** Free-text comment left by the current reader. */
+  feedback_comment?: string | null;
+  /** ISO timestamp of the last rating/comment change. */
+  feedback_at?: string | null;
 }
 
 /** A lesson enriched with adaptive-recommendation metadata. */
@@ -154,21 +160,62 @@ export async function getLesson(id: string, repoId?: string): Promise<Lesson> {
   return (await res.json()) as Lesson;
 }
 
+export type LessonStateAction =
+  | 'mark_read'
+  | 'save'
+  | 'unsave'
+  | 'feedback_up'
+  | 'feedback_down'
+  | 'feedback_clear'
+  | 'set_rating'
+  | 'set_comment';
+
+/** Maximum length accepted for a free-text lesson feedback comment. */
+export const FEEDBACK_COMMENT_MAX = 1000;
+
 export async function updateLessonState(
   id: string,
-  action: 'mark_read' | 'save' | 'unsave' | 'feedback_up' | 'feedback_down' | 'feedback_clear',
+  action: LessonStateAction,
   repoId?: string,
+  payload?: { rating?: number | null; comment?: string | null },
 ): Promise<Lesson> {
   const res = await fetch(
     withRepoId(`/api/lessons/${encodeURIComponent(id)}/state`, repoId),
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
+      body: JSON.stringify({ action, ...payload }),
     },
   );
-  if (!res.ok) throw new Error(`updateLessonState failed: ${res.status}`);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const data = (await res.json()) as { error?: string };
+      detail = data.error ? `: ${data.error}` : '';
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`updateLessonState failed: ${res.status}${detail}`);
+  }
   return (await res.json()) as Lesson;
+}
+
+/** Set (or clear, with `null`) the caller's 1–5 star rating for a lesson. */
+export async function rateLesson(
+  id: string,
+  rating: number | null,
+  repoId?: string,
+): Promise<Lesson> {
+  return updateLessonState(id, 'set_rating', repoId, { rating });
+}
+
+/** Set (or clear, with an empty string) the caller's comment on a lesson. */
+export async function commentLesson(
+  id: string,
+  comment: string,
+  repoId?: string,
+): Promise<Lesson> {
+  return updateLessonState(id, 'set_comment', repoId, { comment });
 }
 
 export interface QueueLessonInput {
