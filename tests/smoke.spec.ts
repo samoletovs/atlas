@@ -134,6 +134,18 @@ test.describe('atlas smoke', () => {
     expect([301, 302, 401]).toContain(resp.status());
   });
 
+  test('/api/lessons/{id}/state (unauth) redirects to login, does not return 200', async ({
+    page,
+  }) => {
+    const resp = await page.request.post(`${BASE}/api/lessons/test/state`, {
+      maxRedirects: 0,
+      headers: { 'Content-Type': 'application/json' },
+      // Use the feedback action this route supports; authentication short-circuits first.
+      data: { action: 'feedback_up' },
+    });
+    expect([301, 302, 401]).toContain(resp.status());
+  });
+
   test('/api/lessons/generate (unauth) redirects to login, does not return 200', async ({ page }) => {
     const resp = await page.request.post(`${BASE}/api/lessons/generate`, {
       maxRedirects: 0,
@@ -158,4 +170,3 @@ test.describe('atlas smoke', () => {
     expect(resp.headers()['content-type']).toMatch(/manifest|json/);
   });
 });
-
