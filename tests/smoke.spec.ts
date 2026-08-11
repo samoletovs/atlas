@@ -6,6 +6,7 @@
  *   - Click "Sign in with GitHub" actually redirects to GitHub OAuth
  *   - .auth/me endpoint responds with JSON
  *   - /api/lessons returns 302 redirect to login when unauthenticated
+ *   - lesson feedback (thumbs, 1-5 star rating, comment) is auth-gated
  *
  * Auth-gated paths can't be exercised end-to-end without credentials,
  * so we test that they redirect correctly. Logged-in flows are covered
@@ -142,6 +143,30 @@ test.describe('atlas smoke', () => {
       headers: { 'Content-Type': 'application/json' },
       // Use the feedback action this route supports; authentication short-circuits first.
       data: { action: 'feedback_up' },
+    });
+    expect([301, 302, 401]).toContain(resp.status());
+  });
+
+  test('/api/lessons/{id}/state set_rating (unauth) redirects to login, does not return 200', async ({
+    page,
+  }) => {
+    // Interactive feedback (1-5 stars) goes through the same state route and
+    // must be auth-gated before any rating validation happens.
+    const resp = await page.request.post(`${BASE}/api/lessons/test/state`, {
+      maxRedirects: 0,
+      headers: { 'Content-Type': 'application/json' },
+      data: { action: 'set_rating', rating: 5 },
+    });
+    expect([301, 302, 401]).toContain(resp.status());
+  });
+
+  test('/api/lessons/{id}/state set_comment (unauth) redirects to login, does not return 200', async ({
+    page,
+  }) => {
+    const resp = await page.request.post(`${BASE}/api/lessons/test/state`, {
+      maxRedirects: 0,
+      headers: { 'Content-Type': 'application/json' },
+      data: { action: 'set_comment', comment: 'smoke test' },
     });
     expect([301, 302, 401]).toContain(resp.status());
   });

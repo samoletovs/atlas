@@ -92,6 +92,7 @@ atlas/
 ✅ Daily per-user quota + global daily $ budget cap
 ✅ Lesson generator with citations, cross-links, markdown callouts
 ✅ Ask-more chat on any lesson (with cost-bounded history)
+✅ Interactive lesson feedback — 1–5 star rating + optional comment
 ✅ English + Russian
 ✅ PWA + service worker for offline reading
 
