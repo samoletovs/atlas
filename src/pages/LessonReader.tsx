@@ -13,6 +13,7 @@ import {
   FEEDBACK_COMMENT_MAX,
 } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
+import { findRelatedTopics } from '../lib/relatedTopics';
 import { markRecentlyRead } from '../lib/recentlyRead';
 import { useLang, useRepo } from '../App';
 
@@ -95,6 +96,15 @@ export function LessonReader() {
     }
     return map;
   }, [library]);
+
+  // Related topics already in the library — instant exploration, no generation.
+  // Topics already surfaced by "What to learn next" are excluded to avoid dupes.
+  const relatedTopics = useMemo(() => {
+    if (!lesson) return [];
+    return findRelatedTopics(lesson, library, {
+      excludeTopics: lesson.suggested_next.map((s) => s.topic),
+    });
+  }, [lesson, library]);
 
   // Render the lesson body once, resolving inline [term](topic:slug) links
   // against the current library. Existing topics → real <a> link. Missing
@@ -401,6 +411,24 @@ export function LessonReader() {
                 </li>
               );
             })}
+          </ul>
+        </section>
+      )}
+
+      {relatedTopics.length > 0 && (
+        <section className="related-topics">
+          <h4>Related topics</h4>
+          <p className="muted small">Already in your library — jump straight in.</p>
+          <ul className="related-list">
+            {relatedTopics.map((r) => (
+              <li key={r.lesson.id} className="related-item">
+                <Link to={`/lesson/${r.lesson.id}`} className="next-link">
+                  <span className="next-title">{r.lesson.title}</span>
+                  <span className="next-arrow" aria-hidden="true">→</span>
+                </Link>
+                <p className="muted">{r.reason}</p>
+              </li>
+            ))}
           </ul>
         </section>
       )}

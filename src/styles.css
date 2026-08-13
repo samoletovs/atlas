@@ -530,7 +530,8 @@ main {
 .body li { margin-bottom: 0.5rem; }
 
 .citations,
-.next {
+.next,
+.related-topics {
   font-family: var(--font-sans);
   margin-top: 2rem;
   border-top: 1px solid var(--border);
@@ -538,7 +539,8 @@ main {
 }
 
 .citations h4,
-.next h4 {
+.next h4,
+.related-topics h4 {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -634,6 +636,22 @@ main {
   border-radius: 999px;
   white-space: nowrap;
 }
+/* "Related topics" — instant cross-links into the existing library */
+.related-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+}
+.related-item {
+  margin-bottom: 0.8rem;
+  padding-left: 1rem;
+  border-left: 2px solid var(--link);
+}
+.related-item p {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+}
+
 .btn-link {
   background: none;
   border: none;
