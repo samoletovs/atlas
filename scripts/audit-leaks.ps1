@@ -73,6 +73,18 @@ function Write-Info([string]$msg, [string]$color = 'Cyan') {
     if (-not $Quiet) { Write-Host $msg -ForegroundColor $color }
 }
 
+function Test-IsBinary([string]$path) {
+    try {
+        $fs = [System.IO.File]::OpenRead($path)
+        try {
+            $buf = New-Object byte[] 8192
+            $read = $fs.Read($buf, 0, $buf.Length)
+            for ($i = 0; $i -lt $read; $i++) { if ($buf[$i] -eq 0) { return $true } }
+        } finally { $fs.Dispose() }
+    } catch { return $false }
+    return $false
+}
+
 function Resolve-RepoRoot {
     $r = (& git rev-parse --show-toplevel 2>$null)
     if ($LASTEXITCODE -eq 0 -and $r) { return (Resolve-Path $r).Path }
@@ -179,7 +191,23 @@ try {
                 -and $_.Name -ne '.leak-patterns.txt' `
                 -and $_.Name -ne '.leak-patterns.local.txt'
         }
+
+        # A git-ignored file cannot reach the remote, so it cannot leak - and scanning one
+        # produces findings nobody can action. Derived binaries (a search index, a cache) are
+        # the common case, and random bytes reliably match an IBAN-shaped pattern, which
+        # blocks the push on pure noise.
+        $ignored = @(git ls-files --others --ignored --exclude-standard 2>$null)
+        if ($ignored.Count) {
+            $ignoredFull = [System.Collections.Generic.HashSet[string]]::new(
+                [string[]]($ignored | ForEach-Object { (Join-Path $repoRoot $_) }),
+                [StringComparer]::OrdinalIgnoreCase)
+            $files = $files | Where-Object { -not $ignoredFull.Contains($_.FullName) }
+        }
     }
+
+    # Text patterns against binary content are meaningless in both directions: false hits on
+    # random bytes, and no real coverage. Sniff for a NUL in the first 8 KB.
+    $files = $files | Where-Object { -not (Test-IsBinary $_.FullName) }
 
     if (-not $files -or $files.Count -eq 0) {
         Write-Info "No files to scan." 'Yellow'
@@ -221,10 +249,59 @@ try {
         $leaks += (Write-LeakHits "re:'$p'" $hits)
     }
 
+    # ── Commit metadata ──
+    # Publishing a repository publishes its commit headers too, and nothing above reads
+    # them: this script scans working-tree files, and `git grep` only ever reads blobs.
+    # That blind spot is not theoretical - it put a corporate address into 151 of
+    # golazo's 243 commits, and golazo is already public, while every content scan over
+    # it returned clean. Author and committer identity and the message body (where
+    # Co-authored-by trailers live) are checked here against the same patterns.
+    #
+    # Note what this cannot fix: once a commit is pushed, GitHub keeps it reachable via
+    # refs/pull/*/head, which the repo owner cannot rewrite or delete. Catching an
+    # identity here - before the push - is the only cheap moment.
+    if (-not $Staged) {
+        $logArgs = if ($PrePushRange) { @('log', $PrePushRange) } else { @('log', '--all') }
+        $metaLines = & git @logArgs --format='%h author %an <%ae>%n%h committer %cn <%ce>%n%h message %B' 2>$null
+
+        if ($metaLines) {
+            $metaText = @($metaLines | Where-Object { $_ -and $_.Trim() })
+            Write-Info "Scanning commit metadata for $($allPatterns.Count) pattern(s)..."
+
+            function Write-MetaHits([string]$label, $hits) {
+                if (-not $hits) { return 0 }
+                # One line per commit field, so the same commit can match repeatedly.
+                # Report distinct commits - that is the number that decides whether a
+                # history rewrite is needed.
+                $shas = $hits | ForEach-Object {
+                    if ($_.Line -match '^([0-9a-f]{7,40})\s') { $Matches[1] }
+                } | Where-Object { $_ } | Sort-Object -Unique
+                Write-Host ""
+                Write-Host "[LEAK commit-metadata $label]" -ForegroundColor Red
+                Write-Host ("  {0} commit(s) affected: {1}" -f $shas.Count,
+                            (($shas | Select-Object -First 8) -join ', ')) -ForegroundColor Yellow
+                if ($shas.Count -gt 8) { Write-Host "  ..." -ForegroundColor Yellow }
+                return $shas.Count
+            }
+
+            foreach ($p in $literalPatterns) {
+                $hits = $metaText | Select-String -Pattern $p -SimpleMatch -ErrorAction SilentlyContinue
+                $leaks += (Write-MetaHits "'$p'" $hits)
+            }
+            foreach ($p in $regexPatterns) {
+                $hits = $metaText | Select-String -Pattern $p -ErrorAction SilentlyContinue
+                $leaks += (Write-MetaHits "re:'$p'" $hits)
+            }
+        }
+    }
+
     Write-Host ""
     if ($leaks -gt 0) {
         Write-Host "FAIL: $leaks leak(s) found across $($allPatterns.Count) pattern(s)." -ForegroundColor Red
-        Write-Host "      Move the value to .env (gitignored) or refactor it out, then re-stage." -ForegroundColor Red
+        Write-Host "      In file content: move the value to .env (gitignored) or refactor it out, then re-stage." -ForegroundColor Red
+        Write-Host "      In commit metadata: fix the identity BEFORE pushing - `git config user.email` to your" -ForegroundColor Red
+        Write-Host "      <id>+<user>@users.noreply.github.com alias, then rebase to rewrite the affected commits." -ForegroundColor Red
+        Write-Host "      Once pushed, GitHub pins those commits behind refs/pull/* that you cannot rewrite." -ForegroundColor Red
         Write-Host "      To bypass once (NOT recommended): git push --no-verify" -ForegroundColor DarkGray
         exit 1
     }
