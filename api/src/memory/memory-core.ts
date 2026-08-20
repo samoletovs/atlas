@@ -351,7 +351,7 @@ export interface ConsolidationPlan {
 
 export interface ConsolidationOptions {
   now?: Date;
-  /** How long a superseded record is retained for audit before removal. */
+  /** How long a superseded record is retained for audit, measured from the correction. */
   supersededGraceDays?: number;
   /** Unused-since-creation age at which a memory is flagged for review. */
   staleDays?: number;
@@ -373,16 +373,26 @@ export function planConsolidation(
   const graceMs = (options.supersededGraceDays ?? 30) * 86_400_000;
   const staleMs = (options.staleDays ?? 180) * 86_400_000;
 
-  const supersededIds = new Set(
-    records.map((record) => record.supersedes).filter((id): id is string => Boolean(id)),
-  );
+  const supersededAt = new Map<string, number>();
+  for (const record of records) {
+    if (!record.supersedes) continue;
+    // The correction's own createdAt *is* the moment of supersession - no extra field
+    // needed. Measuring the grace window from the superseded record's creation instead
+    // would give a long-held belief no audit window at all: a preference learned a year
+    // ago and corrected this morning would vanish on tonight's pass, taking the evidence
+    // of the correction with it. Keep the earliest correction if several pile up.
+    const at = Date.parse(record.createdAt);
+    const seen = supersededAt.get(record.supersedes);
+    if (seen === undefined || at < seen) supersededAt.set(record.supersedes, at);
+  }
 
   const plan: ConsolidationPlan = { drop: [], review: [], keep: [] };
   for (const record of records) {
     const age = now.getTime() - Date.parse(record.createdAt);
+    const replacedAt = supersededAt.get(record.id);
     if (isExpired(record, now)) {
       plan.drop.push(record);
-    } else if (supersededIds.has(record.id) && age > graceMs) {
+    } else if (replacedAt !== undefined && now.getTime() - replacedAt > graceMs) {
       plan.drop.push(record);
     } else if (record.useCount === 0 && age > staleMs && record.kind !== 'correction') {
       // Corrections are exempt: a correction that was never recalled still records
