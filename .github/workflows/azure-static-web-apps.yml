@@ -21,7 +21,14 @@ on:
 
 jobs:
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    # Fork PRs get a read-only token and no secrets, so the SWA token is empty
+    # and this job could only fail for them. Phrased negatively on purpose:
+    # github.event.pull_request is null on push/workflow_run, so a bare
+    # `head.repo.full_name == github.repository` reads false there and would
+    # disable deployment entirely. This constrains pull_request events only.
+    if: >-
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed'))
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     steps:
@@ -67,7 +74,6 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ATLAS }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          skip_deploy_on_missing_secrets: true
           skip_app_build: true
           app_location: "/"
           api_location: "api"
@@ -102,7 +108,14 @@ jobs:
           retention-days: 30
 
   close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    # Fork PRs get a read-only token and no secrets, so the SWA token is empty
+    # and this job could only fail for them. Phrased negatively on purpose:
+    # github.event.pull_request is null on push/workflow_run, so a bare
+    # `head.repo.full_name == github.repository` reads false there and would
+    # disable deployment entirely. This constrains pull_request events only.
+    if: >-
+      (github.event_name == 'pull_request' && github.event.action == 'closed')
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     name: Close Pull Request Job
     steps:
