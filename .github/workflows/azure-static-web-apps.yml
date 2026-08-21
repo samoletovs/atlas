@@ -66,6 +66,7 @@ jobs:
             exit 1
           fi
           test -f dist/manifest.webmanifest || { echo "::error::dist/manifest.webmanifest missing — PWA build incomplete"; exit 1; }
+          test -f dist/staticwebapp.config.json || { echo "::error::dist/staticwebapp.config.json missing — routes and auth rules would not deploy"; exit 1; }
           echo "build output verified"
 
       - name: Build And Deploy
@@ -75,10 +76,16 @@ jobs:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ATLAS }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
+          # `app_location` is what gets zipped and uploaded, and with
+          # `skip_app_build: true` no Oryx step narrows it to `output_location`.
+          # Pointing it at "/" therefore shipped the whole workspace — 25,614
+          # files and 212.7 MB of node_modules against the Free tier's 250 MB
+          # ceiling — which is why deploys failed with "Failure during content
+          # distribution" while the built site is only 0.33 MB. Upload `dist`.
           skip_app_build: true
-          app_location: "/"
+          app_location: "dist"
           api_location: "api"
-          output_location: "dist"
+          output_location: ""
 
   e2e_smoke_test:
     if: github.event_name == 'push'
