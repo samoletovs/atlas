@@ -69,6 +69,20 @@ jobs:
           test -f dist/staticwebapp.config.json || { echo "::error::dist/staticwebapp.config.json missing — routes and auth rules would not deploy"; exit 1; }
           echo "build output verified"
 
+      - name: Verify deployment token is configured
+        # Azure/static-web-apps-deploy logs "Build will not be uploaded as
+        # deployment_token was not found" and still exits 0 when this secret is
+        # empty — that is exactly how run 8b88f86 reported success on 2026-08-17
+        # while deploying nothing, masking the real last successful deployment.
+        # Fail here instead of letting the deploy step silently no-op.
+        env:
+          AZURE_SWA_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ATLAS }}
+        run: |
+          if [ -z "$AZURE_SWA_TOKEN" ]; then
+            echo "::error::AZURE_STATIC_WEB_APPS_API_TOKEN_ATLAS secret is empty — the deploy step would silently skip uploading while still reporting success. Failing the workflow instead of shipping a stale build unnoticed."
+            exit 1
+          fi
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
@@ -86,6 +100,19 @@ jobs:
           app_location: "dist"
           api_location: "api"
           output_location: ""
+
+      - name: Verify deployment actually happened
+        # Belt-and-suspenders for the same silent-skip failure mode: even with
+        # a token present, the action only sets this output on a real deploy.
+        # An empty output here means the step exited 0 without shipping anything.
+        env:
+          DEPLOYED_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
+        run: |
+          if [ -z "$DEPLOYED_URL" ]; then
+            echo "::error::Build And Deploy step produced no static_web_app_url output — it likely skipped uploading while still exiting 0. Treating this as a failed deploy rather than reporting green for nothing shipped."
+            exit 1
+          fi
+          echo "Deployed to $DEPLOYED_URL"
 
   e2e_smoke_test:
     if: github.event_name == 'push'
