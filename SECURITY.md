@@ -1,38 +1,15 @@
-# Security Policy
+# Security policy
 
-## Reporting a vulnerability
+## Supported versions
 
-**Please do not file public issues for security problems.**
+atlas is an experimental project. Security fixes are applied to the default
+branch only.
 
-Email the maintainer privately via the contact on
-[naurolabs.com](https://naurolabs.com), or open a
-[GitHub private security advisory](https://github.com/samoletovs/atlas/security/advisories/new).
+## Report a vulnerability
 
-We aim to acknowledge within 7 days and triage within 30.
+Please use GitHub's **Report a vulnerability** button in the Security tab to
+open a private security advisory. Include the affected component, reproduction
+steps, and the potential impact.
 
-## Scope
-
-In scope:
-
-- Authentication / authorization bypass (the `getPrincipal` / `requireOwner`
-  flow in `api/src/shared/auth.ts`)
-- Cosmos query injection
-- Leakage of another user's lessons, repos, GitHub PATs, or BYOK keys
-- Bypassing the per-user generation quota (`api/src/shared/quota.ts`)
-- Bypassing the global daily AI budget cap (`api/src/shared/budget.ts`)
-- Server-side request forgery via the GitHub URL parser
-- XSS in the lesson reader (markdown rendering)
-- Decryption oracle on stored secrets (`api/src/shared/crypto.ts`)
-
-Out of scope:
-
-- Denial of service via legitimate user behaviour (atlas has cost caps; rate
-  limiting is a known trade-off, not a bug)
-- Dependency vulnerabilities in `node_modules` with no demonstrated exploit
-  path through atlas code
-- Findings from automated scanners without a working PoC
-
-## Disclosure
-
-We follow coordinated disclosure. Once a fix ships we credit the reporter in
-the release notes unless they prefer to stay anonymous.
+Do not report security vulnerabilities in a public issue. You can expect an
+initial response within seven days.

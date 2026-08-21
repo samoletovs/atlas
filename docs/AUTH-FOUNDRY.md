@@ -14,13 +14,13 @@ rest). The `openai` Node SDK + `DefaultAzureCredential` pick up the SP via the
 
 | What | Value |
 | --- | --- |
-| Service principal | `atlas-foundry-sp` |
-| App ID (client ID) | `d372147d-b720-4001-8181-7f2ba398ac35` |
-| SP object ID | `482da1d1-bb84-4f68-90af-b5f7fbeb17cc` |
-| Tenant ID | `a84cc62f-451b-40d3-b413-ddd30bb4cb81` |
+| Service principal | `<service-principal-name>` |
+| App ID (client ID) | `<application-client-id>` |
+| SP object ID | `<service-principal-object-id>` |
+| Tenant ID | `<tenant-id>` |
 | RBAC role | **Cognitive Services User** |
-| Role scope | `/subscriptions/<sub>/resourceGroups/foundryLab-rg/providers/Microsoft.CognitiveServices/accounts/foundrylab-aiservices` |
-| Foundry endpoint | `https://foundrylab-aiservices.cognitiveservices.azure.com/` |
+| Role scope | `/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>` |
+| Foundry endpoint | `https://<account>.cognitiveservices.azure.com/` |
 | Deployment | `gpt-4o-mini` |
 | API version | `2024-08-01-preview` |
 | Token scope | `https://cognitiveservices.azure.com/.default` |
@@ -43,7 +43,7 @@ The SP secret expires ~1 year after creation. To rotate:
 ```pwsh
 # 1. Create a new password (revokes old one if same display name reused)
 $reset = az ad app credential reset `
-  --id d372147d-b720-4001-8181-7f2ba398ac35 `
+  --id $env:AZURE_CLIENT_ID `
   --display-name "atlas-swa-rotated-$(Get-Date -Format yyyyMMdd)" `
   --years 1 `
   2>$null | ConvertFrom-Json
