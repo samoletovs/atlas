@@ -5,6 +5,20 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Grouped 2026-08-23. Measured 21 dependency PRs in 60 days across six repos,
+    # 54% of everything the lab merged. Each is a separate branch, a separate CI
+    # run, and a separate thing for a human to look at and learn nothing from.
+    # One PR per directory per week carries the same information.
+    #
+    # Majors stay ungrouped on purpose: they are the ones that actually break a
+    # build, and they are worth reading individually.
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     open-pull-requests-limit: 5
     labels:
       - dependencies
@@ -16,6 +30,20 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Grouped 2026-08-23. Measured 21 dependency PRs in 60 days across six repos,
+    # 54% of everything the lab merged. Each is a separate branch, a separate CI
+    # run, and a separate thing for a human to look at and learn nothing from.
+    # One PR per directory per week carries the same information.
+    #
+    # Majors stay ungrouped on purpose: they are the ones that actually break a
+    # build, and they are worth reading individually.
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     open-pull-requests-limit: 5
     labels:
       - dependencies
