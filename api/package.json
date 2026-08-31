@@ -15,10 +15,10 @@
     "@azure/cosmos": "^4.10.0",
     "@azure/functions": "^4.16.2",
     "@azure/identity": "^4.13.2",
-    "openai": "^7.5.0"
+    "openai": "^7.8.0"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.4.0",
     "typescript": "^6.0.3"
   }
 }
