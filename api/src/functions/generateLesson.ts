@@ -176,11 +176,12 @@ function sanitizeGeneratedLesson(payload: GeneratedLesson): GeneratedLesson {
 
   const sectionsAlt = BAD_BODY_SECTION_PATTERNS.join('|');
   const pattern = new RegExp(
-    `(?im)^[ \\t]*(?:` +
+    `^[ \\t]*(?:` +
       `#{1,6}[ \\t]+(?:${sectionsAlt})\\b[^\\n]*` +
       `|\\*\\*\\s*(?:${sectionsAlt})\\b[^*\\n]*\\*\\*:?` +
       `|(?:${sectionsAlt})\\b[^\\n]*:\\s*` +
       `)[ \\t]*\\n`,
+    'im',
   );
   const match = pattern.exec(payload.body);
   if (!match) {
@@ -263,7 +264,10 @@ async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string)
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text) throw new Error('Model returned empty response');
   const parsed = sanitizeGeneratedLesson(parseModelJson(text));
-  if (!parsed.title || !parsed.body) {
+  if (
+    typeof parsed.title !== 'string' || !parsed.title.trim() ||
+    typeof parsed.body !== 'string' || !parsed.body.trim()
+  ) {
     throw new Error('Model response missing required fields');
   }
   return parsed;
