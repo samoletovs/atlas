@@ -53,6 +53,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify API lesson contracts
+        run: npm ci --prefix api && npm test --prefix api && npm run build --prefix api
+
       - name: Build app
         run: npm run build
 

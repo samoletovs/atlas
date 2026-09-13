@@ -43,9 +43,15 @@ for authentication and service setup.
 Before submitting a change:
 
 ```powershell
+npm test --prefix api
+npm run build --prefix api
 npm run build
 npm test
 ```
+
+The API tests exercise the lesson handler with synthetic model responses and mocked
+storage, without credentials or network access. The root Playwright suite includes
+deployment smoke tests; it is separate from these offline contract checks.
 
 ## Status
 
