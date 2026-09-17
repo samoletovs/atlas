@@ -1,5 +1,5 @@
 /**
- * GET /api/lessons/recommended?repoId=<id>&lang=en|ru
+ * GET /api/recommendations?repoId=<id>&lang=en|ru
  *
  * Adaptive learning path: returns unread published lessons ordered by how
  * well they match the user's current reading profile. The algorithm:
@@ -129,6 +129,6 @@ export async function getRecommendations(
 app.http('getRecommendations', {
   methods: ['GET'],
   authLevel: 'anonymous',
-  route: 'lessons/recommended',
+  route: 'recommendations',
   handler: getRecommendations,
 });

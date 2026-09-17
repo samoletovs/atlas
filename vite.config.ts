@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { LESSON_API_CACHE_PATTERN } from './src/lib/apiRoutes.ts';
 
 export default defineConfig({
   plugins: [
@@ -44,7 +45,7 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/\.auth\//, /^\/api\//],
         runtimeCaching: [
           {
-            urlPattern: /\/api\/lessons.*$/,
+            urlPattern: LESSON_API_CACHE_PATTERN,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'atlas-api-lessons',

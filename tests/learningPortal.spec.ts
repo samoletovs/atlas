@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { RECOMMENDATIONS_PATH } from '../src/lib/apiRoutes';
 import { test, expect, LOCAL_BASE_URL, REPOS, type ReviewState } from './fixtures/learningPortal';
 
 // Deliberately independent of ATLAS_BASE_URL, which belongs to the production auth smoke suite.
@@ -54,7 +55,7 @@ test.describe('Clearway local learning portal', () => {
     }
     await expect(lessonLink(page, queued.id)).toHaveCount(0);
     expect(portal.requests).toEqual(expect.arrayContaining([
-      expect.objectContaining({ pathname: '/api/lessons/recommended', repoId: REPOS[0].repoId, lang: 'en' }),
+      expect.objectContaining({ pathname: RECOMMENDATIONS_PATH, repoId: REPOS[0].repoId, lang: 'en' }),
       expect.objectContaining({ pathname: '/api/lessons', status: 'published', repoId: REPOS[0].repoId, lang: 'en' }),
     ]));
   });
@@ -145,6 +146,32 @@ test.describe('Clearway local learning portal', () => {
     await expect(main(page).getByText(recommended.recommendation_reason, { exact: true })).toBeVisible();
     await expect(warning).toHaveCount(0);
   });
+
+  for (const width of [390, 713]) {
+    test(`keeps retry text on one line at ${width}px`, async ({ page, portal }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      portal.failures.add('recommended');
+      await portal.goto();
+      const retry = main(page).getByRole('button', { name: 'Retry recommendations', exact: true });
+      await expect(retry).toBeVisible();
+      const metrics = await retry.evaluate(element => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return {
+          lines: [...range.getClientRects()].filter(rect => rect.width > 0).length,
+          client: element.clientWidth,
+          scroll: element.scrollWidth,
+          right: element.getBoundingClientRect().right,
+          viewport: document.documentElement.clientWidth,
+        };
+      });
+      expect(metrics.lines).toBe(1);
+      expect(metrics.scroll).toBeLessThanOrEqual(metrics.client + 1);
+      expect(metrics.right).toBeLessThanOrEqual(metrics.viewport);
+      const notice = main(page).getByRole('alert').filter({ hasText: "Recommendations couldn't be loaded" });
+      await testInfo.attach('retry-message', { body: await notice.screenshot(), contentType: 'image/png' });
+    });
+  }
 
   test('exposes complete source failure and recovers through Retry instead of an empty success state', async ({ page, portal }) => {
     for (const source of ['recommended', 'published', 'queued', 'read'] as const) portal.failures.add(source);

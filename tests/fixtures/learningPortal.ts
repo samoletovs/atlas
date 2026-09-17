@@ -1,4 +1,5 @@
 import { test as base, expect, type Page, type Request, type Route } from '@playwright/test';
+import { RECOMMENDATIONS_PATH } from '../../src/lib/apiRoutes';
 import type {
   AllowedRepo,
   AskResult,
@@ -417,8 +418,8 @@ export class PortalBackend {
       await this.unexpected(route, 'Missing or unknown repoId');
       return;
     }
-    if (method === 'GET' && (url.pathname === '/api/lessons' || url.pathname === '/api/lessons/recommended')) {
-      const source = url.pathname.endsWith('/recommended') ? 'recommended' : url.searchParams.get('status');
+    if (method === 'GET' && (url.pathname === '/api/lessons' || url.pathname === RECOMMENDATIONS_PATH)) {
+      const source = url.pathname === RECOMMENDATIONS_PATH ? 'recommended' : url.searchParams.get('status');
       if (!isLanguage(lang) || !isSource(source)
         || (url.pathname === '/api/lessons' && source === 'recommended')) {
         await this.unexpected(route, 'Missing or invalid lang/status');

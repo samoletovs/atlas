@@ -125,6 +125,13 @@ test.describe('atlas smoke', () => {
     expect([301, 302, 401]).toContain(resp.status());
   });
 
+  for (const path of ['/api/recommendations', '/api/lessons/recommended']) {
+    test(`${path} retains the authentication boundary`, async ({ page }) => {
+      const response = await page.request.get(`${BASE}${path}`, { maxRedirects: 0 });
+      expect([301, 302, 401]).toContain(response.status());
+    });
+  }
+
   test('/api/lessons/queue (unauth) redirects to login, does not return 200', async ({ page }) => {
     // POST should be auth-gated identically to the other endpoints.
     const resp = await page.request.post(`${BASE}/api/lessons/queue`, {

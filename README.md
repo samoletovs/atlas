@@ -34,6 +34,12 @@ humanist typography and both light and dark themes. Reading depth means coverage
 mastery; lesson publication does not imply that software was deployed. See
 [PRODUCT.md](PRODUCT.md) for the product boundaries.
 
+Recommendations use `GET /api/recommendations`, outside the parameterized
+`/api/lessons/{id}` namespace. The previous `/api/lessons/recommended` URL remains
+compatible through explicit dispatch, so cached clients cannot mistake it for a
+lesson id. Both URLs retain the same authorization and recommendation response
+contract; the PWA cache covers both.
+
 ## Stack
 
 - React 19, TypeScript, Vite, and Playwright

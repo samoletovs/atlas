@@ -1,6 +1,7 @@
 /**
  * Lightweight API client. SWA forwards browser cookies; auth is automatic.
  */
+import { RECOMMENDATIONS_PATH } from './apiRoutes';
 
 export interface ClientPrincipal {
   userId: string;
@@ -454,7 +455,7 @@ export async function getRecommendations(
   repoId?: string,
 ): Promise<LearningPathLesson[]> {
   const url = withRepoId(
-    `/api/lessons/recommended?lang=${encodeURIComponent(lang)}`,
+    `${RECOMMENDATIONS_PATH}?lang=${encodeURIComponent(lang)}`,
     repoId,
   );
   const res = await fetch(url);

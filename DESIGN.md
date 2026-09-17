@@ -257,7 +257,7 @@ Reader textareas have a visible label, neutral card surface, strong border, `rea
 
 Keyboard focus is a three-pixel theme focus outline, normally offset by three pixels; Learn and collection links/buttons use four pixels. The yellow band overrides the focus color to accent ink. Retain the visible-on-focus skip link. General buttons and selects have a 44px minimum height; inline lesson topic references remain inline, not oversized buttons.
 
-Collection and Learn failures use a neutral, strongly bordered recovery notice and explicit error-colored detail; reader action/form errors are unboxed error text near the affected action. Empty and loading states remain distinct from failures. Do not show a successful read, generation, or quota state before the corresponding current-context result; asynchronous completion, topic-context generation, and quota expiry are behavior constraints, not new visual states to invent.
+Collection and Learn failures use a neutral, strongly bordered recovery notice and explicit error-colored detail; reader action/form errors are unboxed error text near the affected action. Learn retry labels remain unbroken while message text yields space; recovery controls stack on narrow screens. Empty and loading states remain distinct from failures. Do not show a successful read, generation, or quota state before the corresponding current-context result; asynchronous completion, topic-context generation, and quota expiry are behavior constraints, not new visual states to invent.
 
 ## Do's and Don'ts
 
