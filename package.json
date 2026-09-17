@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "lint": "echo \"No linter configured yet\"",
     "test": "playwright test",
+    "test:typecheck": "tsc --project tsconfig.tests.json",
+    "test:portal": "playwright test learningPortal.spec.ts adaptiveScoring.spec.ts relatedTopics.spec.ts recentlyRead.spec.ts",
     "test:install": "playwright install chromium --with-deps"
   },
   "dependencies": {
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@types/node": "20.19.43",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",

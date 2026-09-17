@@ -57,26 +57,44 @@ npm run dev
 The local backend uses Azure Functions tooling. See [docs/HANDOFF.md](docs/HANDOFF.md)
 for authentication and service setup.
 
-Before submitting a change:
+## Test instructions
+
+Before submitting a change (install Chromium once with `npm run test:install`):
 
 ```powershell
 npm test --prefix api
 npm run build --prefix api
+npm run test:typecheck
 npm run build
 npm test
 ```
 
 The API tests exercise the lesson handler with synthetic model responses and mocked
 storage, without credentials or network access. The root Playwright suite includes
-production smoke tests and authenticated portal regressions. The portal regressions
-use a local Vite app with mocked API responses, not a real account or model:
+production authentication smoke tests and local portal regressions.
+`npm run test:typecheck` checks all root tests and the Playwright configuration with strict
+TypeScript settings and Node 20 declarations, without emitting files. `npm test`
+still runs the full suite and starts a local Vite app by default.
+
+Run only the local portal, adaptive-scoring, related-topic, and read-notification
+regressions with:
 
 ```powershell
-npx playwright test tests\learningPortal.spec.ts --workers=2
+npm run test:portal
 ```
+
+The portal regressions use mocked API responses, not a real account or model.
+CI runs these regressions, test type checking, API tests/build, and the frontend
+build before uploading anything to Static Web Apps. After a production deployment,
+a separate job runs only `smoke.spec.ts` against the deployed site's authentication
+boundary, without repeating the local regressions.
 
 `ATLAS_LOCAL_BASE_URL` can target an explicitly started local app for portal tests.
 `ATLAS_BASE_URL` continues to select the deployment used by the production smoke tests.
+For a production-only smoke run, set `ATLAS_SMOKE_ONLY=1` and run
+`npx playwright test smoke.spec.ts` to avoid starting Vite. The flag only disables
+the local server; it does not filter tests. CI sets it only on the postdeployment
+smoke step. Leave it unset for `npm test` or `npm run test:portal`.
 
 ## Status
 

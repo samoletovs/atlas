@@ -20,7 +20,7 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: process.env.ATLAS_LOCAL_BASE_URL
+  webServer: process.env.ATLAS_LOCAL_BASE_URL || process.env.ATLAS_SMOKE_ONLY === '1'
     ? undefined
     : {
         command: 'npm run dev -- --host 127.0.0.1 --port 43127 --strictPort',

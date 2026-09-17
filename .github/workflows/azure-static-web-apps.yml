@@ -56,6 +56,15 @@ jobs:
       - name: Verify API lesson contracts
         run: npm ci --prefix api && npm test --prefix api && npm run build --prefix api
 
+      - name: Typecheck tests
+        run: npm run test:typecheck
+
+      - name: Install Playwright browsers
+        run: npm run test:install
+
+      - name: Verify local portal regressions
+        run: npm run test:portal
+
       - name: Build app
         run: npm run build
 
@@ -136,7 +145,8 @@ jobs:
       - name: Run smoke tests against atlas.naurolabs.com
         env:
           ATLAS_BASE_URL: https://atlas.naurolabs.com
-        run: npx playwright test
+          ATLAS_SMOKE_ONLY: '1'
+        run: npx playwright test smoke.spec.ts
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
