@@ -100,15 +100,22 @@ Reuses the foundryLab account we already provisioned. No new Azure costs beyond 
 
 ## Design Direction
 
-**Calm. Phone-first. Print-quality typography.**
+**Clear way: your work, understood.** The learning-portal direction approved on
+17 September 2026 puts a useful next lesson ahead of visual spectacle. The home page
+combines the ready queue and personalized recommendations, with a prominent yellow
+reading band and real project/source context. Topics, Saved and History provide
+predictable ways back into the material.
 
-Think Pocket meets Readwise meets Things 3. Big serif for body text, large line-height, dark-by-default. Single column. No sidebars. No social. No streaks. The only chrome is "back to next up" and a thin progress dot indicator showing where you are in the lesson.
-
-- Dark mode default; light mode opt-in
-- Serif for lesson body, sans-serif for UI
-- Generous line-height (1.7) and font-size (18–20px on phone)
-- One lesson on screen at a time during reading
-- 100% accessible: AA contrast, keyboard navigable, screen-reader friendly
+- Cool-neutral surfaces rather than green-tinted backgrounds; a distinct identity
+  from PortaBaltica's newsroom. No 3D interface or agent-management console.
+- Both light and dark themes, respecting the reader's saved or system preference.
+- Humanist typography, generous line height and comfortable phone reading measure.
+- One lesson is the focus while reading. Sources, questions, feedback and next
+  suggestions remain available without competing equally with the lesson body.
+- Existing read/save state and browser-local review, without invented mastery,
+  streaks, persistent reading-position claims or deployment-status badges.
+- Target AA contrast, keyboard and screen-reader usability, adequate touch targets,
+  reduced motion and useful empty/error states.
 
 ## Business Model Hypothesis
 

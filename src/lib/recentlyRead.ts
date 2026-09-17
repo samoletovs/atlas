@@ -1,26 +1,49 @@
-/**
- * Client-side "recently read" tracking.
- *
- * The "Next up" list hides read lessons by joining each lesson with its
- * per-user `lessonProgress` row server-side. Right after marking a lesson
- * read, the immediate re-fetch can observe a stale `lessonProgress` state
- * (Cosmos session consistency isn't guaranteed across separate Function
- * invocations), so the just-read lesson sometimes reappears once.
- *
- * To make the UI deterministic, we remember locally which lessons were
- * marked read this session and filter them out of the "Next up" list,
- * regardless of how quickly the backend catches up. Read state is durable
- * server-side, so over-filtering here is harmless — a genuinely read lesson
- * never belongs in "Next up" anyway.
- */
-const readIds = new Set<string>();
+import { useCallback, useSyncExternalStore } from 'react';
 
-/** Record that a lesson was just marked read. */
-export function markRecentlyRead(id: string): void {
-  readIds.add(id);
+interface ReadScope {
+  ids: Set<string>;
+  version: number;
+  listeners: Set<() => void>;
 }
 
-/** Whether a lesson was marked read this session. */
-export function isRecentlyRead(id: string): boolean {
-  return readIds.has(id);
+// Confirmed writes survive reader navigation while the API's read-after-write catches up.
+// Only IDs are retained, scoped to the repository, for this application session.
+const scopes = new Map<string, ReadScope>();
+
+function scopeFor(repoId: string): ReadScope {
+  let scope = scopes.get(repoId);
+  if (!scope) {
+    scope = { ids: new Set(), version: 0, listeners: new Set() };
+    scopes.set(repoId, scope);
+  }
+  return scope;
+}
+
+export function markRecentlyRead(id: string, repoId: string): void {
+  const scope = scopeFor(repoId);
+  scope.ids.add(id);
+  scope.version += 1;
+  for (const listener of [...scope.listeners]) listener();
+}
+
+export function isRecentlyRead(id: string, repoId: string): boolean {
+  return scopeFor(repoId).ids.has(id);
+}
+
+export function getRecentlyReadVersion(repoId: string): number {
+  return scopeFor(repoId).version;
+}
+
+export function subscribeRecentlyRead(repoId: string, listener: () => void): () => void {
+  const listeners = scopeFor(repoId).listeners;
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+const serverVersion = () => 0;
+
+export function useRecentlyReadVersion(repoId: string): number {
+  const subscribe = useCallback((listener: () => void) => subscribeRecentlyRead(repoId, listener), [repoId]);
+  const snapshot = useCallback(() => getRecentlyReadVersion(repoId), [repoId]);
+  return useSyncExternalStore(subscribe, snapshot, serverVersion);
 }

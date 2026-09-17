@@ -5,6 +5,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
+  workers: 2,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : [['list']],
@@ -19,4 +20,12 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
+  webServer: process.env.ATLAS_LOCAL_BASE_URL
+    ? undefined
+    : {
+        command: 'npm run dev -- --host 127.0.0.1 --port 43127 --strictPort',
+        url: 'http://127.0.0.1:43127',
+        reuseExistingServer: false,
+        timeout: 60_000,
+      },
 });

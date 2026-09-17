@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink, Link } from 'react-router-dom';
+import { Routes, Route, NavLink, Link, Navigate, useLocation, useNavigationType } from 'react-router-dom';
 import {
   createContext,
   useCallback,
@@ -7,7 +7,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { LearnHome } from './pages/LearnHome';
 import { LessonsList } from './pages/LessonsList';
 import { LessonReader } from './pages/LessonReader';
 import { About } from './pages/About';
@@ -15,7 +17,6 @@ import { Admin } from './pages/Admin';
 import { AddRepo } from './pages/AddRepo';
 import { Settings } from './pages/Settings';
 import { TopicAtlas } from './pages/TopicAtlas';
-import { LearningPath } from './pages/LearningPath';
 import {
   fetchUser,
   fetchMe,
@@ -98,14 +99,30 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
   const { lang, setLang } = useLang();
   const { theme, toggle: toggleTheme } = useTheme();
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const initialFocus = useRef<'first' | 'last'>('first');
+
+  const close = (restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  };
 
   useEffect(() => {
     if (!open) return;
+    const items = ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+    if (items?.length) {
+      items[initialFocus.current === 'last' ? items.length - 1 : 0]?.focus();
+    }
     function onDocClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (e.target instanceof Node && ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
     }
     function onEsc(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('keydown', onEsc);
@@ -115,16 +132,44 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
     };
   }, [open]);
 
-  const close = () => setOpen(false);
+  function handleMenuKeys(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+    const active = document.activeElement;
+    const index = active instanceof HTMLElement ? items.indexOf(active) : -1;
+    let next: number;
+    switch (event.key) {
+      case 'ArrowDown': next = (index + 1) % items.length; break;
+      case 'ArrowUp': next = (index - 1 + items.length) % items.length; break;
+      case 'Home': next = 0; break;
+      case 'End': next = items.length - 1; break;
+      case 'Tab':
+        close(true);
+        return;
+      default: return;
+    }
+    event.preventDefault();
+    items[next]?.focus();
+  }
 
   return (
     <div className="user-menu" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
         className="user-menu-trigger"
         aria-expanded={open}
         aria-haspopup="menu"
-        onClick={() => setOpen((o) => !o)}
+        aria-controls={open ? 'profile-menu' : undefined}
+        onClick={() => {
+          initialFocus.current = 'first';
+          setOpen((o) => !o);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+          event.preventDefault();
+          initialFocus.current = event.key === 'ArrowUp' ? 'last' : 'first';
+          setOpen(true);
+        }}
       >
         <span className="user-menu-name">{login}</span>
         <span className="user-menu-caret" aria-hidden>
@@ -132,22 +177,22 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
         </span>
       </button>
       {open && (
-        <div className="user-menu-popover" role="menu">
-          <NavLink to="/repos/new" role="menuitem" onClick={close}>
+        <div id="profile-menu" className="user-menu-popover" role="menu" aria-label="Account" onKeyDown={handleMenuKeys}>
+          <NavLink to="/repos/new" role="menuitem" onClick={() => close()}>
             + Add repo
           </NavLink>
-          <NavLink to="/settings" role="menuitem" onClick={close}>
+          <NavLink to="/settings" role="menuitem" onClick={() => close()}>
             Settings
           </NavLink>
           {isOwner && (
-            <NavLink to="/admin" role="menuitem" onClick={close}>
+            <NavLink to="/admin" role="menuitem" onClick={() => close()}>
               Admin
             </NavLink>
           )}
-          <NavLink to="/about" role="menuitem" onClick={close}>
+          <NavLink to="/about" role="menuitem" onClick={() => close()}>
             About
           </NavLink>
-          <div className="user-menu-sep" />
+          <div className="user-menu-sep" role="separator" />
           <button
             type="button"
             role="menuitem"
@@ -160,7 +205,7 @@ function UserMenu({ login, isOwner }: { login: string; isOwner: boolean }) {
             <span>Theme</span>
             <span className="user-menu-value">{theme === 'dark' ? 'Dark' : 'Light'}</span>
           </button>
-          <div className="user-menu-sep" />
+          <div className="user-menu-sep" role="separator" />
           <a role="menuitem" href="/.auth/logout">
             Sign out
           </a>
@@ -182,8 +227,11 @@ function BrandPath() {
 
   return (
     <div className="brand">
-      <Link to="/" className="brand-name">
-        atlas
+      <Link to="/" className="brand-name" aria-label="Atlas home">
+        <svg className="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 19 19 5M7 5h12v12" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+        Atlas
       </Link>
       {current && (
         <>
@@ -254,6 +302,7 @@ export function App() {
   // Tracks whether the server has been told about the latest local choice,
   // so we don't PATCH on every render — only when the user actually toggles.
   const serverPrefsRef = useRef<{ theme?: Theme; lang?: Lang }>({});
+  const meRefreshVersion = useRef(0);
 
   const setLang = useCallback((next: Lang) => {
     setLangState(next);
@@ -284,15 +333,20 @@ export function App() {
   // this same key before React mounts.
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+      ?.setAttribute('content', theme === 'dark' ? '#111722' : '#f5f6f8');
     localStorage.setItem('atlas-theme', theme);
   }, [theme]);
 
   const refreshMe = useCallback(async () => {
+    const version = ++meRefreshVersion.current;
     const me = await fetchMe();
     if (!me) return null;
-    setState((prev) =>
-      prev.kind === 'ready' ? { ...prev, me } : prev,
-    );
+    if (version === meRefreshVersion.current) {
+      setState((prev) =>
+        prev.kind === 'ready' ? { ...prev, me } : prev,
+      );
+    }
     return me;
   }, []);
 
@@ -410,6 +464,19 @@ function AuthenticatedShell({
   setRepoId,
   refreshMe,
 }: AuthenticatedShellProps) {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const mainRef = useRef<HTMLElement>(null);
+  const isReading = location.pathname.startsWith('/lesson/');
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      mainRef.current?.focus({ preventScroll: true });
+      if (navigationType !== 'POP') window.scrollTo({ top: 0, behavior: 'instant' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [location.pathname, navigationType]);
+
   const currentRole: AtlasRole | null =
     me.allowedRepos.find((r) => r.repoId === repoId)?.role ?? null;
 
@@ -429,17 +496,17 @@ function AuthenticatedShell({
     <LangContext.Provider value={langCtxValue}>
       <RepoContext.Provider value={repoCtxValue}>
         <MeContext.Provider value={meCtxValue}>
-          <div className="app-shell">
+          <div className={`app-shell${isReading ? ' app-shell--reading' : ''}`}>
+            <a className="skip-link" href="#main-content">Skip to content</a>
             <header className="topbar">
               <BrandPath />
-              <nav>
+              <nav aria-label="Main navigation">
                 <NavLink to="/" end>
-                  Next up
+                  Learn
                 </NavLink>
-                <NavLink to="/for-you">For you</NavLink>
+                {hasAnyRepo && <NavLink to="/atlas">Topics</NavLink>}
                 <NavLink to="/saved">Saved</NavLink>
-                <NavLink to="/read">Read</NavLink>
-                {hasAnyRepo && <NavLink to="/atlas">Atlas</NavLink>}
+                <NavLink to="/read">History</NavLink>
               </nav>
               <div className="topbar-right">
                 <QuotaBadge quota={me.quota} />
@@ -449,18 +516,18 @@ function AuthenticatedShell({
                 />
               </div>
             </header>
-            <main>
+            <main id="main-content" ref={mainRef} tabIndex={-1}>
               <Routes>
                 <Route
                   path="/"
                   element={
-                    hasAnyRepo ? <LessonsList status="published" /> : <NoRepoLanding />
+                    hasAnyRepo ? <LearnHome /> : <NoRepoLanding />
                   }
                 />
-                <Route path="/saved" element={<LessonsList status="saved" />} />
-                <Route path="/read" element={<LessonsList status="read" />} />
-                <Route path="/for-you" element={<LearningPath />} />
-                <Route path="/atlas" element={<TopicAtlas />} />
+                <Route path="/saved" element={hasAnyRepo ? <LessonsList status="saved" /> : <NoRepoLanding />} />
+                <Route path="/read" element={hasAnyRepo ? <LessonsList status="read" /> : <NoRepoLanding />} />
+                <Route path="/for-you" element={<Navigate to={{ pathname: '/', search: location.search, hash: location.hash }} replace />} />
+                <Route path="/atlas" element={hasAnyRepo ? <TopicAtlas /> : <NoRepoLanding />} />
                 <Route path="/lesson/:id" element={<LessonReader />} />
                 <Route path="/admin" element={<Admin />} />
                 <Route path="/repos/new" element={<AddRepo />} />
