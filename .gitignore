@@ -35,6 +35,9 @@ test-results/
 playwright-report/
 playwright/.cache/
 
+# Local design-tool cache contains workstation paths, not design tokens.
+.impeccable/hook.cache.json
+
 # IDE
 .vscode/*
 !.vscode/settings.json

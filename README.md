@@ -17,6 +17,23 @@ feedback, and follow-up questions.
 - Tracks topic coverage, reading progress, ratings, and review cards.
 - Supports follow-up questions, sharing, quotas, and offline PWA reading.
 
+## Learning experience
+
+**Learn** combines the ready-lesson queue and personalized recommendations: one useful
+next lesson, its relevance and source context, then other available lessons. Due review
+items remain useful even when there is nothing new to read; queued content is clearly
+separate from ready lessons.
+
+**Topics** starts with a readable index, with the existing relationship graph available
+as an optional view. **Saved** and **History** keep revisiting straightforward. A focused
+reader retains source references, citations, contextual questions, feedback and next
+suggestions without turning the home page into a chatbot or a deployment dashboard.
+
+The Clear way design uses a yellow reading band, cool-neutral surfaces, comfortable
+humanist typography and both light and dark themes. Reading depth means coverage, not
+mastery; lesson publication does not imply that software was deployed. See
+[PRODUCT.md](PRODUCT.md) for the product boundaries.
+
 ## Stack
 
 - React 19, TypeScript, Vite, and Playwright
@@ -40,18 +57,44 @@ npm run dev
 The local backend uses Azure Functions tooling. See [docs/HANDOFF.md](docs/HANDOFF.md)
 for authentication and service setup.
 
-Before submitting a change:
+## Test instructions
+
+Before submitting a change (install Chromium once with `npm run test:install`):
 
 ```powershell
 npm test --prefix api
 npm run build --prefix api
+npm run test:typecheck
 npm run build
 npm test
 ```
 
 The API tests exercise the lesson handler with synthetic model responses and mocked
 storage, without credentials or network access. The root Playwright suite includes
-deployment smoke tests; it is separate from these offline contract checks.
+production authentication smoke tests and local portal regressions.
+`npm run test:typecheck` checks all root tests and the Playwright configuration with strict
+TypeScript settings and Node 20 declarations, without emitting files. `npm test`
+still runs the full suite and starts a local Vite app by default.
+
+Run only the local portal, adaptive-scoring, related-topic, and read-notification
+regressions with:
+
+```powershell
+npm run test:portal
+```
+
+The portal regressions use mocked API responses, not a real account or model.
+CI runs these regressions, test type checking, API tests/build, and the frontend
+build before uploading anything to Static Web Apps. After a production deployment,
+a separate job runs only `smoke.spec.ts` against the deployed site's authentication
+boundary, without repeating the local regressions.
+
+`ATLAS_LOCAL_BASE_URL` can target an explicitly started local app for portal tests.
+`ATLAS_BASE_URL` continues to select the deployment used by the production smoke tests.
+For a production-only smoke run, set `ATLAS_SMOKE_ONLY=1` and run
+`npx playwright test smoke.spec.ts` to avoid starting Vite. The flag only disables
+the local server; it does not filter tests. CI sets it only on the postdeployment
+smoke step. Leave it unset for `npm test` or `npm run test:portal`.
 
 ## Status
 

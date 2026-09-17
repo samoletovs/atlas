@@ -1,10 +1,19 @@
 <!doctype html>
+<!--
+THESIS: Help the reader understand their work through one useful next lesson.
+OWN-WORLD: Clear way; a yellow direction band, cool neutrals, humanist type, and a quiet reader in both themes.
+STORY: See why a lesson is relevant, read it, then save, revisit, or choose a related topic.
+FIRST VIEWPORT: The leading ready recommendation owns the main band; project context and the reading action stay visible.
+FORM: The user's approved balanced study, implemented with real lesson data. No 3D, prototype copy, mastery scores, or implied deployment status.
+-->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0a0a" />
-    <meta name="description" content="atlas — personal teacher" />
+    <meta name="theme-color" content="#111722" />
+    <meta name="description" content="Atlas — understand what you build, one useful lesson at a time." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
     <title>atlas</title>
     <script>
       // Apply the saved theme BEFORE React renders so first-paint matches the
@@ -20,6 +29,9 @@
                 ? 'dark'
                 : 'light';
           document.documentElement.setAttribute('data-theme', theme);
+          document.querySelector('meta[name="theme-color"]').setAttribute(
+            'content', theme === 'dark' ? '#111722' : '#f5f6f8'
+          );
         } catch (_) {
           /* localStorage blocked — fall through, CSS default applies */
         }

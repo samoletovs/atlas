@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Lesson, listLessons, generateLessonNow } from '../lib/api';
-import { isRecentlyRead } from '../lib/recentlyRead';
-import { listDueReviewCards, markReviewDone, reviewStepLabel } from '../lib/spacedReview';
+import { Link } from 'react-router-dom';
 import { useLang, useRepo } from '../App';
+import { LessonMeta } from '../components/LessonMeta';
+import { listLessons, type Lesson } from '../lib/api';
+import { useRecentlyReadVersion } from '../lib/recentlyRead';
+import { LearnHome } from './LearnHome';
+import './LessonsList.css';
 
 interface Props {
   status: string;
@@ -11,192 +13,124 @@ interface Props {
 
 export function LessonsList({ status }: Props) {
   const { lang } = useLang();
-  const { repoId, role } = useRepo();
-  const navigate = useNavigate();
-  const location = useLocation();
-  // When navigating here right after marking a lesson read, the id is passed
-  // via navigation state so we can filter it out before the API response
-  // arrives (works even when the Cosmos read-after-write hasn't propagated).
-  const justRead = (location.state as { justRead?: string } | null)?.justRead ?? null;
-  const [lessons, setLessons] = useState<Lesson[] | null>(null);
-  const [reviewCards, setReviewCards] = useState<
-    { lesson: Lesson; step: number; dueAt: string }[]
-  >([]);
-  const [queued, setQueued] = useState<Lesson[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [generating, setGenerating] = useState<Record<string, 'busy' | { error: string }>>({});
-
-  const isOwner = role === 'owner';
-
-  useEffect(() => {
-    setLessons(null);
-    setError(null);
-    listLessons(status, lang, repoId)
-      .then((items) =>
-        // On "Next up", hide lessons marked read this session even if the
-        // backend read-after-write hasn't propagated yet.
-        setLessons(
-          status === 'published'
-            ? items.filter((l) => !isRecentlyRead(l.id) && l.id !== justRead)
-            : items,
-        ),
-      )
-      .catch((e: Error) => setError(e.message));
-
-    // Only show "Coming soon" on the main "Next up" view.
-    if (status === 'published') {
-      listLessons('queued', lang, repoId)
-        .then(setQueued)
-        .catch(() => setQueued([]));
-      listLessons('read', lang, repoId)
-        .then((readLessons) => setReviewCards(listDueReviewCards(repoId, readLessons)))
-        .catch(() => setReviewCards([]));
-    } else {
-      setQueued([]);
-      setReviewCards([]);
-    }
-  }, [status, lang, repoId, justRead]);
-
-  if (error) return <div className="error">Couldn’t load lessons: {error}</div>;
-  if (!lessons) return <div className="loading">Loading…</div>;
-
-  if (lessons.length === 0 && queued.length === 0) {
-    return (
-      <div className="empty">
-        <h2>{statusToHeading(status)}</h2>
-        <p className="muted">{emptyMessage(status)}</p>
-      </div>
-    );
-  }
-
+  const { repoId } = useRepo();
+  if (status === 'published') return <LearnHome />;
   return (
-    <div className="list">
-      <h2 className="list-heading">{statusToHeading(status)}</h2>
-      {lessons.map((l) => (
-        <Link key={l.id} to={`/lesson/${l.id}`} className="card">
-          <div className="card-meta">
-            <span className="topic">{l.topic.split('/').slice(-1)[0]}</span>
-            <span className="depth depth-{l.depth}">{l.depth}</span>
-            <span className="read-min">{l.read_minutes} min</span>
-          </div>
-          <h3 className="card-title">{l.title}</h3>
-          {l.source_event?.summary && (
-            <p className="card-source">From: {l.source_event.summary}</p>
-          )}
-        </Link>
-      ))}
-
-      {status === 'published' && reviewCards.length > 0 && (
-        <>
-          <h2 className="list-heading list-heading-muted">Review cards</h2>
-          {reviewCards.map((c) => (
-            <article key={c.lesson.id} className="card card-review">
-              <div className="card-meta">
-                <span className="topic">{c.lesson.topic.split('/').slice(-1)[0]}</span>
-                <span>{reviewStepLabel(c.step)}</span>
-                <span>due now</span>
-              </div>
-              <h3 className="card-title">{c.lesson.title}</h3>
-              <div className="review-actions">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => navigate(`/lesson/${c.lesson.id}`)}
-                >
-                  Review lesson
-                </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => {
-                    markReviewDone(repoId, c.lesson.id);
-                    setReviewCards((current) => current.filter((x) => x.lesson.id !== c.lesson.id));
-                  }}
-                >
-                  Mark reviewed
-                </button>
-              </div>
-            </article>
-          ))}
-        </>
-      )}
-
-      {queued.length > 0 && (
-        <>
-          <h2 className="list-heading list-heading-muted">Coming soon</h2>
-          {queued.map((l) => {
-            const state = generating[l.id];
-            const busy = state === 'busy';
-            const err = typeof state === 'object' ? state.error : null;
-            const clickable = isOwner && !busy;
-            return (
-              <button
-                key={l.id}
-                type="button"
-                className="card card-queued"
-                disabled={!clickable}
-                onClick={() => {
-                  if (!clickable) return;
-                  setGenerating((g) => ({ ...g, [l.id]: 'busy' }));
-                  generateLessonNow(
-                    {
-                      title: l.title,
-                      topic: l.topic,
-                      language: l.language ?? lang,
-                      rationale: l.source_event?.summary,
-                      source_lesson_id: l.source_event?.ref,
-                      depth: l.depth,
-                    },
-                    repoId,
-                  )
-                    .then((generated) => navigate(`/lesson/${generated.id}`))
-                    .catch((e: Error) => {
-                      setGenerating((g) => ({
-                        ...g,
-                        [l.id]: { error: e.message },
-                      }));
-                    });
-                }}
-              >
-                <div className="card-meta">
-                  <span className="topic">{l.topic.split('/').slice(-1)[0]}</span>
-                  <span className="next-badge">
-                    {busy ? (
-                      <>
-                        <span className="spinner" aria-hidden="true" /> Generating…
-                      </>
-                    ) : (
-                      'Queued'
-                    )}
-                  </span>
-                </div>
-                <h3 className="card-title">{l.title}</h3>
-                {l.source_event?.summary && (
-                  <p className="card-source muted">{l.source_event.summary}</p>
-                )}
-                {isOwner && !busy && !err && (
-                  <p className="card-hint muted small">Tap to generate now (~10s)</p>
-                )}
-                {err && <p className="error-inline">Couldn’t generate: {err}</p>}
-              </button>
-            );
-          })}
-        </>
-      )}
-    </div>
+    <Collection
+      key={JSON.stringify([status, lang, repoId])}
+      status={status}
+      lang={lang}
+      repoId={repoId}
+    />
   );
 }
 
-function statusToHeading(s: string): string {
-  if (s === 'published') return 'Next up';
-  if (s === 'saved') return 'Saved';
-  if (s === 'read') return 'Already read';
-  return s;
-}
+function Collection({
+  status,
+  lang,
+  repoId,
+}: Props & { lang: 'en' | 'ru'; repoId: string }) {
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const readVersion = useRecentlyReadVersion(repoId);
+  const heading = status === 'saved' ? 'Saved' : status === 'read' ? 'History' : 'Lessons';
 
-function emptyMessage(s: string): string {
-  if (s === 'published') return 'No new lessons yet. Check back after your next build session.';
-  if (s === 'saved') return 'You haven’t saved any lessons.';
-  if (s === 'read') return 'You haven’t finished any lessons yet.';
-  return 'Nothing here.';
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listLessons(status, lang, repoId).then(
+      (items) => {
+        if (cancelled) return;
+        const matching = items.filter((lesson) =>
+          lesson.language === lang && (!lesson.repoId || lesson.repoId === repoId));
+        setLessons([...new Map(matching.map((lesson) => [lesson.id, lesson])).values()]);
+        setError(null);
+        setLoading(false);
+      },
+      (reason: unknown) => {
+        if (cancelled) return;
+        setError(reason instanceof Error ? reason.message : 'An unexpected error occurred.');
+        setLoading(false);
+      },
+    );
+    return () => { cancelled = true; };
+  }, [status, lang, repoId, attempt, readVersion]);
+
+  return (
+    <section className="lesson-collection" aria-labelledby="collection-title">
+      <header className="collection-heading">
+        <h1 id="collection-title">{heading}</h1>
+        <p>
+          {status === 'saved' ? "Lessons you've saved to return to."
+            : status === 'read' ? "Lessons you've marked as read." : 'Browse your lessons.'}
+        </p>
+      </header>
+
+      {loading && <p className="collection-loading" role="status">Loading {heading.toLowerCase()}...</p>}
+      {error && (
+        <div className="collection-error" role="alert">
+          <div>
+            <p>Couldn't load {status === 'saved' ? 'saved lessons' : status === 'read' ? 'reading history' : 'lessons'}.</p>
+            <p className="collection-error-detail">{error}</p>
+          </div>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              setLoading(true);
+              setAttempt((current) => current + 1);
+            }}
+          >
+            {loading ? 'Retrying...' : 'Retry'}
+          </button>
+        </div>
+      )}
+      {!loading && !error && lessons.length === 0 && (
+        <div className="collection-empty">
+          <h2>{status === 'saved' ? 'No saved lessons yet'
+            : status === 'read' ? 'No reading history yet' : 'No lessons yet'}</h2>
+          <p>
+            {status === 'saved' ? 'Save a lesson while reading to find it here later.'
+              : status === 'read' ? 'Lessons appear here when you mark them as read.'
+                : 'Ready lessons appear on Learn.'}
+          </p>
+          <Link to="/">Find a lesson <span aria-hidden="true">&rarr;</span></Link>
+        </div>
+      )}
+
+      {lessons.length > 0 && (
+        <ul className="collection-list">
+          {lessons.map((lesson) => {
+            const readDate = lesson.read_at ? new Date(lesson.read_at) : null;
+            const hasReadDate = readDate !== null && !Number.isNaN(readDate.getTime());
+            return (
+              <li key={lesson.id}>
+                <Link to={`/lesson/${lesson.id}`} className="collection-lesson-link">
+                  <div className="collection-lesson-content">
+                    <h2>{lesson.title}</h2>
+                    <LessonMeta lesson={lesson} />
+                    {lesson.source_event?.summary && (
+                      <p className="collection-source">{lesson.source_event.summary}</p>
+                    )}
+                    {hasReadDate && (
+                      <p className="collection-read-date">
+                        Read <time dateTime={lesson.read_at ?? undefined}>
+                          {readDate.toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB', {
+                            day: 'numeric', month: 'short', year: 'numeric',
+                          })}
+                        </time>
+                      </p>
+                    )}
+                  </div>
+                  <span className="collection-row-arrow" aria-hidden="true">&rarr;</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
 }

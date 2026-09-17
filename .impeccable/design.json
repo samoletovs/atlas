@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-17T14:37:41.759Z",
+  "title": "Design System: Atlas",
+  "extensions": {
+    "colorMeta": {
+      "bg": { "role": "neutral", "displayName": "Cool paper" },
+      "bg-card": { "role": "neutral", "displayName": "White surface" },
+      "bg-card-hover": { "role": "neutral", "displayName": "Cool surface hover" },
+      "bg-subtle": { "role": "neutral", "displayName": "Quiet control surface" },
+      "bg-elev": { "role": "neutral", "displayName": "White elevated surface" },
+      "fg": { "role": "neutral", "displayName": "Reading ink" },
+      "fg-muted": { "role": "neutral", "displayName": "Supporting ink" },
+      "fg-subtle": { "role": "neutral", "displayName": "Tertiary ink" },
+      "border": { "role": "neutral", "displayName": "Cool dividing rule" },
+      "border-strong": { "role": "neutral", "displayName": "Strong control rule" },
+      "accent": { "role": "primary", "displayName": "Ochre emphasis" },
+      "accent-surface": { "role": "primary", "displayName": "Direction yellow" },
+      "accent-ink": { "role": "neutral", "displayName": "Accent ink" },
+      "accent-hover": { "role": "primary", "displayName": "Yellow action hover" },
+      "link": { "displayName": "Link blue" },
+      "focus-ring": { "displayName": "Keyboard focus blue" },
+      "error": { "displayName": "Error rose" },
+      "error-surface": { "displayName": "Soft error rose" },
+      "success": { "displayName": "Success green" },
+      "success-surface": { "displayName": "Soft success green" },
+      "warning": { "displayName": "Warning ochre" },
+      "warning-surface": { "displayName": "Soft warning ochre" },
+      "dark-bg": { "role": "neutral", "displayName": "Night slate" },
+      "dark-bg-card": { "role": "neutral", "displayName": "Slate surface" },
+      "dark-bg-card-hover": { "role": "neutral", "displayName": "Slate surface hover" },
+      "dark-bg-subtle": { "role": "neutral", "displayName": "Quiet slate control" },
+      "dark-bg-elev": { "role": "neutral", "displayName": "Slate elevated surface" },
+      "dark-fg": { "role": "neutral", "displayName": "Pale reading ink" },
+      "dark-fg-muted": { "role": "neutral", "displayName": "Pale supporting ink" },
+      "dark-fg-subtle": { "role": "neutral", "displayName": "Pale tertiary ink" },
+      "dark-border": { "role": "neutral", "displayName": "Slate dividing rule" },
+      "dark-border-strong": { "role": "neutral", "displayName": "Strong slate control rule" },
+      "dark-accent": { "role": "primary", "displayName": "Warm yellow emphasis" },
+      "dark-accent-surface": { "role": "primary", "displayName": "Muted direction yellow" },
+      "dark-accent-ink": { "role": "neutral", "displayName": "Accent ink in dark mode" },
+      "dark-accent-hover": { "role": "primary", "displayName": "Muted yellow action hover" },
+      "dark-link": { "displayName": "Pale link blue" },
+      "dark-focus-ring": { "displayName": "Pale keyboard focus blue" },
+      "dark-error": { "displayName": "Pale error rose" },
+      "dark-error-surface": { "displayName": "Deep error rose" },
+      "dark-success": { "displayName": "Pale success green" },
+      "dark-success-surface": { "displayName": "Deep success green" },
+      "dark-warning": { "displayName": "Pale warning yellow" },
+      "dark-warning-surface": { "displayName": "Deep warning ochre" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Direction title", "purpose": "The leading ready lesson in the yellow band." },
+      "headline": { "displayName": "Reader title", "purpose": "Balanced humanist lesson title, at most 25ch." },
+      "title": { "displayName": "Section title", "purpose": "Learn section headings, not a universal modular scale." },
+      "body": { "displayName": "Interface body", "purpose": "Default application text." },
+      "reading": { "displayName": "Quiet reader", "purpose": "Lesson prose at a maximum 68ch; 18px/32.4px to 20px/36px at the current root size. The legacy serif token resolves to this same sans-serif family." },
+      "label": { "displayName": "Lesson metadata", "purpose": "Compact, wrapping topic, depth, and reading-time information." },
+      "mono": { "displayName": "Code block", "purpose": "Reader code blocks with horizontal overflow, not compressed prose." }
+    },
+    "shadows": [
+      { "name": "account-popover", "value": "0 10px 28px rgb(10 20 35 / 16%)", "purpose": "Structural account overlay only; ordinary content stays flat." }
+    ],
+    "motion": [
+      { "name": "reading-cta", "value": "opacity 120ms ease", "purpose": "The inverted reading CTA changes to opacity 0.86 on hover." },
+      { "name": "recovery-control", "value": "background 120ms ease", "purpose": "Learn and collection recovery control hover." },
+      { "name": "shared-card", "value": "background 0.15s, border-color 0.15s", "purpose": "Tonal and border feedback without lifting the card." },
+      { "name": "reader-controls", "value": "none", "purpose": "Reader buttons and related links/arrows do not animate." },
+      { "name": "topic-edge", "value": "stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease", "purpose": "Flat SVG relationship feedback; stroke-width affects paint, not layout." },
+      { "name": "topic-node-circle", "value": "fill 120ms ease, stroke-width 120ms ease", "purpose": "Flat SVG node feedback, disabled under reduced motion." },
+      { "name": "reduced-motion", "value": "@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }", "purpose": "Global accessibility override, including pseudo-elements and graph paint transitions." }
+    ],
+    "breakpoints": [
+      { "name": "shell-navigation-second-row-max", "value": "1000px" },
+      { "name": "direction-single-column-max", "value": "900px" },
+      { "name": "topic-detail-sidebar-min", "value": "880px" },
+      { "name": "topic-detail-below-max", "value": "879px" },
+      { "name": "learn-context-and-actions-stack-max", "value": "700px" },
+      { "name": "phone-navigation-and-full-width-cta-max", "value": "600px" },
+      { "name": "collection-recovery-stack-max", "value": "500px" },
+      { "name": "reader-actions-stack-max", "value": "480px" },
+      { "name": "compact-direction-max", "value": "380px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Reading CTA",
+      "kind": "button",
+      "refersTo": "learn-read-link",
+      "description": "Inverted action in the yellow direction band; 52px minimum height, square edges, accent-ink focus, and full width on phones.",
+      "html": "<div class=\"ds-direction\"><a class=\"ds-read-link\" href=\"#ds-lesson\">Read lesson <span aria-hidden=\"true\">&#8594;</span></a></div>",
+      "css": ".ds-direction { --focus-ring: var(--accent-ink); padding: clamp(1.5rem, 4.5vw, 3.5rem); background: var(--accent-surface); color: var(--accent-ink); font-family: var(--font-sans); font-size: 16px; } .ds-read-link { display: inline-flex; align-items: center; justify-content: space-between; gap: 1.5rem; min-height: 52px; min-width: 15rem; padding: 0.8rem 1.15rem; background: var(--accent-ink); color: var(--accent-surface); text-decoration: none; font-weight: 700; line-height: 1.3; white-space: nowrap; transition: opacity 120ms ease; } .ds-read-link:hover { opacity: 0.86; } .ds-read-link:focus-visible { outline: 3px solid var(--accent-ink); outline-offset: 4px; } @media (max-width: 600px) { .ds-read-link { width: 100%; min-width: 0; } } @media (max-width: 380px) { .ds-direction { padding: 1.3rem; } } @media (prefers-reduced-motion: reduce) { .ds-read-link { transition: none; } }"
+    },
+    {
+      "name": "Reader primary action",
+      "kind": "button",
+      "refersTo": "reader-primary",
+      "description": "Lesson completion action; yellow fill is retained on hover. Disabled and saved results must follow real current-context state.",
+      "html": "<button class=\"ds-reader-primary\" type=\"button\">Mark as read</button>",
+      "css": ".ds-reader-primary { display: inline-flex; align-items: center; justify-content: center; gap: 0.65rem; min-height: 48px; min-width: 10rem; max-width: 100%; padding: 0.65rem 1.125rem; border: 1px solid var(--accent-surface); border-radius: 0.5rem; color: var(--accent-ink); background: var(--accent-surface); font-family: var(--font-sans); font-size: 0.9375rem; font-weight: 600; line-height: 1.4; white-space: nowrap; cursor: pointer; transition: none; } .ds-reader-primary:hover:not(:disabled) { border-color: var(--accent-ink); } .ds-reader-primary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; } .ds-reader-primary:disabled { cursor: not-allowed; opacity: 0.65; } @media (max-width: 480px) { .ds-reader-primary { width: 100%; } }"
+    },
+    {
+      "name": "Reader secondary action",
+      "kind": "button",
+      "refersTo": "reader-secondary",
+      "description": "Quiet save control. Apply the saved class and aria-pressed only for the actual saved state.",
+      "html": "<button class=\"ds-reader-secondary\" type=\"button\" aria-pressed=\"false\">Save</button>",
+      "css": ".ds-reader-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 0.65rem; min-height: 44px; min-width: 6.5rem; max-width: 100%; padding: 0.65rem 1.125rem; border: 1px solid var(--border-strong); border-radius: 0.5rem; color: var(--fg); background: var(--bg-card); font-family: var(--font-sans); font-size: 0.9375rem; font-weight: 600; line-height: 1.4; white-space: nowrap; cursor: pointer; transition: none; } .ds-reader-secondary:hover:not(:disabled) { border-color: var(--fg-muted); background: var(--bg-card-hover); } .ds-reader-secondary.ds-saved, .ds-reader-secondary.ds-saved:hover:not(:disabled) { color: var(--accent-ink); border-color: var(--accent-surface); background: var(--accent-surface); } .ds-reader-secondary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; } .ds-reader-secondary:disabled { cursor: not-allowed; opacity: 0.65; }"
+    },
+    {
+      "name": "Learn recovery action",
+      "kind": "button",
+      "refersTo": "learn-button",
+      "description": "Flat outlined recovery or supporting action, with a 44px minimum target.",
+      "html": "<button class=\"ds-learn-button\" type=\"button\">Try again</button>",
+      "css": ".ds-learn-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0.6rem 0.95rem; border: 1px solid var(--border-strong); border-radius: 3px; background: transparent; color: var(--fg); font-family: var(--font-sans); font-size: 0.9rem; font-weight: 700; line-height: 1.4; text-align: center; text-decoration: none; cursor: pointer; transition: background 120ms ease; } .ds-learn-button:hover:not(:disabled) { background: var(--bg-card-hover); } .ds-learn-button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 4px; } .ds-learn-button:disabled { color: var(--fg-muted); cursor: not-allowed; } @media (prefers-reduced-motion: reduce) { .ds-learn-button { transition: none; } }"
+    },
+    {
+      "name": "Reader question field",
+      "kind": "input",
+      "refersTo": "reader-input",
+      "description": "Labeled, vertically resizable reader textarea with adjacent unboxed error feedback. Preview text is illustrative, not lesson data or a live result.",
+      "html": "<div class=\"ds-reader-form\"><label for=\"ds-question\">Ask a question</label><textarea id=\"ds-question\" aria-describedby=\"ds-question-error\" placeholder=\"Your question\"></textarea><p class=\"ds-reader-error\" id=\"ds-question-error\">Unable to send the question. Try again.</p></div>",
+      "css": ".ds-reader-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.625rem; align-items: start; margin: 0; font-family: var(--font-sans); } .ds-reader-form label { color: var(--fg); font-size: 0.9375rem; font-weight: 600; } .ds-reader-form textarea { width: 100%; min-width: 0; min-height: 6rem; padding: 0.875rem 1rem; border: 1px solid var(--border-strong); border-radius: 0.5rem; color: var(--fg); background: var(--bg-card); font-family: var(--font-sans); font-size: 1rem; line-height: 1.6; resize: vertical; } .ds-reader-form textarea::placeholder { color: var(--fg-subtle); opacity: 1; } .ds-reader-form textarea:focus, .ds-reader-form textarea:focus-visible { border-color: var(--focus-ring); outline: 3px solid var(--focus-ring); outline-offset: 3px; } .ds-reader-error { margin: 0.75rem 0; padding: 0; border: 0; color: var(--error); background: none; font-family: var(--font-sans); font-size: 0.9375rem; line-height: 1.65; overflow-wrap: anywhere; }"
+    },
+    {
+      "name": "Primary navigation",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Learn, Topics, Saved, and History remain visible. The shell places navigation on its own row at 1000px; phones use four equal columns.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Primary\"><a class=\"ds-active\" href=\"#ds-learn\" aria-current=\"page\">Learn</a><a href=\"#ds-topics\">Topics</a><a href=\"#ds-saved\">Saved</a><a href=\"#ds-history\">History</a></nav>",
+      "css": ".ds-nav { display: flex; gap: 1.4rem; font-family: var(--font-sans); font-size: 0.95rem; } .ds-nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; color: var(--fg-muted); text-decoration: none; padding: 0.5rem 0; border-bottom: 2px solid transparent; white-space: nowrap; flex-shrink: 0; line-height: 1.4; } .ds-nav a.ds-active { font-weight: 700; } .ds-nav a.ds-active, .ds-nav a:hover { color: var(--fg); border-bottom-color: var(--accent); } .ds-nav a:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; } @media (max-width: 1000px) { .ds-nav { gap: 1.8rem; } } @media (max-width: 600px) { .ds-nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; font-size: 0.875rem; } .ds-nav a { padding: 0.4rem 0.1rem; } }"
+    },
+    {
+      "name": "Topic chip",
+      "kind": "chip",
+      "refersTo": "topic-chip",
+      "description": "Pill-shaped topic filter; foreground and accent border indicate selection without claiming mastery.",
+      "html": "<button class=\"ds-topic-chip\" type=\"button\" aria-pressed=\"false\">Topic</button>",
+      "css": ".ds-topic-chip { min-height: 44px; border: 1px solid var(--border); background: var(--bg-card); color: var(--fg-muted); border-radius: 999px; padding: 0.33rem 0.62rem; font-family: var(--font-sans); font-size: 0.8rem; line-height: 1.6; white-space: nowrap; cursor: pointer; } .ds-topic-chip.ds-active, .ds-topic-chip:hover { color: var(--fg); border-color: var(--accent); } .ds-topic-chip:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }"
+    },
+    {
+      "name": "Reader callout",
+      "kind": "card",
+      "refersTo": "reader-callout",
+      "description": "Neutral reader panel, including warning and remember variants; only those titles take accent foreground. No lift or warning-tinted reader background.",
+      "html": "<aside class=\"ds-callout ds-callout-remember\"><div class=\"ds-callout-title\">Remember</div><p>Keep the explanation connected to its lesson context.</p></aside>",
+      "css": ".ds-callout { display: block; margin: 1.5em 0; padding: 1rem 1.125rem; border: 1px solid var(--border); border-radius: 0.5rem; color: var(--fg); background: var(--bg-card); font-family: var(--font-reading, var(--font-sans)); font-size: clamp(1.125rem, 1.05rem + 0.3vw, 1.25rem); line-height: 1.8; font-style: normal; } .ds-callout-title { margin: 0 0 0.35rem; color: var(--fg); font-family: var(--font-sans); font-size: 1rem; font-weight: 700; letter-spacing: normal; text-transform: none; } .ds-callout-warn .ds-callout-title, .ds-callout-remember .ds-callout-title { color: var(--accent); } .ds-callout p { margin: 0.35rem 0 0; }"
+    },
+    {
+      "name": "Reader disclosure",
+      "kind": "custom",
+      "refersTo": "reader-disclosure",
+      "description": "Native details/summary for optional provenance, questions, and feedback; preserves a marker, focus, and phone-stacked hint.",
+      "html": "<details class=\"ds-disclosure\"><summary>Sources <span class=\"ds-disclosure-hint\">Lesson context</span></summary><div class=\"ds-disclosure-content\">Source context and citations appear here when available.</div></details>",
+      "css": ".ds-disclosure { margin: 0; padding: 0; border: 0; border-top: 1px solid var(--border); color: var(--fg); font-family: var(--font-sans); font-size: 1rem; line-height: 1.6; } .ds-disclosure > summary { min-height: 56px; padding: 1rem 0; color: var(--fg); font-size: 1rem; font-weight: 600; line-height: 1.6; cursor: pointer; list-style-position: outside; margin-left: 1.125rem; } .ds-disclosure > summary::marker { color: var(--fg-subtle); font-size: 0.8em; } .ds-disclosure > summary:hover { color: var(--link); } .ds-disclosure > summary:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; } .ds-disclosure-hint { display: inline-block; margin-left: 0.75rem; color: var(--fg-muted); font-size: 0.875rem; font-weight: 400; } .ds-disclosure-content { padding: 0.25rem 0 1.5rem; } @media (max-width: 480px) { .ds-disclosure-hint { display: block; margin-left: 0; } }"
+    },
+    {
+      "name": "Collection recovery notice",
+      "kind": "custom",
+      "refersTo": "collection-error",
+      "description": "Strongly bordered neutral recovery notice, not an empty collection or success state. Error wording in this preview is illustrative.",
+      "html": "<div class=\"ds-collection-error\"><div><p>Unable to load lessons.</p><p class=\"ds-error-detail\">Try again to reload the collection.</p></div><button type=\"button\">Try again</button></div>",
+      "css": ".ds-collection-error { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0; padding: 1rem 1.2rem; border: 1px solid var(--border-strong); background: var(--bg-card); color: var(--fg); font-family: var(--font-sans); font-size: 16px; line-height: 1.6; } .ds-collection-error p { margin: 0; } .ds-collection-error .ds-error-detail { margin-top: 0.4rem; color: var(--error); font-size: 0.9rem; } .ds-collection-error button { min-height: 44px; padding: 0.6rem 1rem; border: 1px solid var(--border-strong); border-radius: 3px; background: transparent; color: var(--fg); font: inherit; cursor: pointer; transition: background 120ms ease; } .ds-collection-error button:hover:not(:disabled) { background: var(--bg-card-hover); } .ds-collection-error button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 4px; } .ds-collection-error button:disabled { color: var(--fg-muted); cursor: not-allowed; } @media (max-width: 500px) { .ds-collection-error { align-items: flex-start; flex-direction: column; } } @media (prefers-reduced-motion: reduce) { .ds-collection-error button { transition: none; } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Clear way",
+    "overview": "Atlas is focused personal learning: a clear next reading choice, strong humanist headings, and supporting information that stays quiet. Cool neutral surfaces and a yellow direction band carry the approved balanced composition; the lesson itself remains comfortable and unhurried.\n\nControls are flat and functional. Borders, spacing, and typography establish hierarchy rather than decorative depth. Both themes belong to the same world. The approved anti-references are a newsroom composition and the separate 3D experiments, not useful topic relationships or real work context.",
+    "keyCharacteristics": [
+      "Yellow direction, cool neutral surroundings.",
+      "Humanist headings and a quiet, generous reader.",
+      "Flat controls, ruled retrieval lists, and explicit states.",
+      "Consistent light and dark themes with phone-first reading."
+    ],
+    "rules": [
+      { "name": "The Role Pairing Rule", "body": "Keep accent ink on accent surfaces, body text on neutral surfaces, and semantic text paired with its own state surface; switch complete theme roles rather than isolated colors.", "section": "colors" },
+      { "name": "The Quiet Reader Rule", "body": "Keep readable body type and its measure intact; separate metadata, questions, feedback, and provenance from the main lesson rather than making them compete with it.", "section": "typography" }
+    ],
+    "dos": [
+      "Do preserve the approved yellow direction band, cool neutral palette, humanist type, and quiet reader in both themes.",
+      "Do keep Learn, Topics, Saved, and History visible and use real lesson, relevance, and source-context data.",
+      "Do preserve the reader's 68ch maximum measure, fluid reading size, and 1.8 line-height.",
+      "Do retain explicit pending, empty, error, disabled, and saved states, keyboard focus, and reduced-motion behavior.",
+      "Do describe intro/intermediate/deep as reading coverage and topic relationships as suggestions."
+    ],
+    "donts": [
+      "Don't introduce a serif reading world, decorative 3D, or a newsroom composition.",
+      "Don't copy example lesson content from the approved composition into production or invent mastery scores.",
+      "Don't present queued lessons as ready, browser-local review state as assessed mastery, or lesson publication as verified software deployment.",
+      "Don't turn optional reader disclosures into competing primary panels or apply the popover shadow to ordinary content.",
+      "Don't invent palette ramps, replacement tokens, or success feedback to conceal missing data or failed operations."
+    ]
+  }
+}

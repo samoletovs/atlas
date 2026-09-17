@@ -1,0 +1,171 @@
+.lesson-collection {
+  max-width: 960px;
+  padding-top: clamp(1.5rem, 4vw, 3rem);
+  overflow-wrap: anywhere;
+}
+
+.collection-heading {
+  margin-bottom: 2rem;
+}
+
+.collection-heading h1 {
+  margin: 0 0 0.6rem;
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.collection-heading p {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.collection-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.collection-list > li {
+  border-bottom: 1px solid var(--border);
+}
+
+.collection-lesson-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  min-height: 44px;
+  padding: 1.5rem 0;
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.collection-lesson-content {
+  min-width: 0;
+}
+
+.collection-lesson-link h2 {
+  margin: 0 0 0.7rem;
+  font-size: clamp(1.15rem, 2.5vw, 1.45rem);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.collection-lesson-link:hover h2 {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.collection-source {
+  max-width: 80ch;
+  margin: 0.75rem 0 0;
+  color: var(--fg-muted);
+  font-size: 0.95rem;
+}
+
+.collection-read-date {
+  margin: 0.65rem 0 0;
+  color: var(--fg-subtle);
+  font-size: 0.88rem;
+}
+
+.collection-row-arrow {
+  flex-shrink: 0;
+  color: var(--link);
+  font-size: 1.4rem;
+}
+
+.collection-loading {
+  color: var(--fg-muted);
+}
+
+.collection-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+}
+
+.collection-error p {
+  margin: 0;
+}
+
+.collection-error .collection-error-detail {
+  margin-top: 0.4rem;
+  color: var(--error);
+  font-size: 0.9rem;
+}
+
+.collection-error button {
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.collection-error button:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+}
+
+.collection-error button:disabled {
+  color: var(--fg-muted);
+  cursor: not-allowed;
+}
+
+.collection-empty {
+  padding: 2rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.collection-empty h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.4rem;
+  line-height: 1.3;
+}
+
+.collection-empty p {
+  margin: 0 0 1rem;
+  color: var(--fg-muted);
+}
+
+.collection-empty a {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 44px;
+}
+
+.lesson-collection :where(a, button):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+@media (max-width: 500px) {
+  .collection-error {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .collection-lesson-link {
+    gap: 0.75rem;
+    padding: 1.25rem 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collection-error button {
+    transition: none;
+  }
+}

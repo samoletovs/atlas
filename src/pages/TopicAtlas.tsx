@@ -1,5 +1,5 @@
 /**
- * Topic atlas — a graph view of every topic that has at least one lesson
+ * Topic index with an optional graph of topics that have at least one lesson
  * in the current repo. Node size is proportional to lesson count; edges
  * come from `suggested_next` cross-links between lessons. Clicking a
  * topic opens its newest published lesson.
@@ -8,11 +8,11 @@
  * no lessons yet — owners can click them to generate a lesson inline.
  *
  * Layout: tiny dependency-free force simulation that runs to a frozen
- * state on mount, then renders as a static SVG. Re-runs only when the
- * repo / language changes.
+ * state when Graph is selected, then renders as a static SVG. The default
+ * list does not run the simulation.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Lesson, listLessons, generateLessonNow } from '../lib/api';
 import { useLang, useRepo } from '../App';
 
@@ -228,31 +228,73 @@ function formatTopic(s: string): string {
 export function TopicAtlas() {
   const { lang } = useLang();
   const { repoId, allowedRepos, role } = useRepo();
-  const isOwner = role === 'owner';
+  return (
+    <TopicAtlasContent
+      key={JSON.stringify([repoId, lang, role])}
+      repoId={repoId}
+      lang={lang}
+      isOwner={role === 'owner'}
+      hasRepos={allowedRepos.length > 0}
+    />
+  );
+}
+
+function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
+  repoId: string;
+  lang: 'en' | 'ru';
+  isOwner: boolean;
+  hasRepos: boolean;
+}) {
   const navigate = useNavigate();
-  const [lessons, setLessons] = useState<Lesson[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const contextKey = `${repoId}\u0000${lang}`;
+  const [result, setResult] = useState<{ key: string; lessons: Lesson[] | null; error: string | null }>({
+    key: contextKey, lessons: null, error: null,
+  });
+  const [reload, setReload] = useState(0);
+  const lessons = result.key === contextKey ? result.lessons : null;
+  const error = result.key === contextKey ? result.error : null;
+  const activeContext = useRef(contextKey);
+  activeContext.current = contextKey;
+  const mounted = useRef(false);
+  const generationInFlight = useRef(false);
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [mode, setMode] = useState<'graph' | 'list'>('graph');
+  const [mode, setMode] = useState<'graph' | 'list'>('list');
   const [generatingTopic, setGeneratingTopic] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [newTopicInput, setNewTopicInput] = useState('');
 
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+
   useEffect(() => {
-    setLessons(null);
-    setError(null);
+    let active = true;
+    setResult({ key: contextKey, lessons: null, error: null });
+    setHovered(null);
+    setGeneratingTopic(null);
+    setGenerateError(null);
+    setNewTopicInput('');
     listLessons('all', lang, repoId)
-      .then(setLessons)
-      .catch((e: Error) => setError(e.message));
-  }, [lang, repoId]);
+      .then((items) => {
+        if (active) setResult({ key: contextKey, lessons: items, error: null });
+      })
+      .catch((reason: unknown) => {
+        if (active) setResult({
+          key: contextKey, lessons: null,
+          error: reason instanceof Error ? reason.message : String(reason),
+        });
+      });
+    return () => { active = false; };
+  }, [contextKey, lang, repoId, reload]);
 
   const graph = useMemo(() => {
     if (!lessons) return null;
     const g = buildGraph(lessons);
-    runSimulation(g.nodes, g.edges);
+    if (mode === 'graph') runSimulation(g.nodes, g.edges);
     return g;
-  }, [lessons]);
+  }, [lessons, mode]);
 
   useEffect(() => {
     if (!graph || graph.nodes.length === 0) {
@@ -266,21 +308,34 @@ export function TopicAtlas() {
     });
   }, [graph]);
 
-  async function handleGenerateGhost(node: TopicNode) {
-    if (!isOwner || generatingTopic) return;
-    const title = node.ghostTitle || formatTopic(node.topic);
-    setGeneratingTopic(node.topic);
+  async function generateTopic(topic: string, title: string) {
+    if (!isOwner || generationInFlight.current) return;
+    generationInFlight.current = true;
+    const startedContext = contextKey;
+    setGeneratingTopic(topic);
     setGenerateError(null);
     try {
       const generated = await generateLessonNow(
-        { title, topic: node.topic, language: lang as 'en' | 'ru' },
+        { title, topic, language: lang },
         repoId,
       );
+      if (!mounted.current || activeContext.current !== startedContext) return;
+      setGeneratingTopic(null);
       navigate(`/lesson/${generated.id}`);
     } catch (e) {
+      if (!mounted.current || activeContext.current !== startedContext) {
+        console.warn('Topic generation failed after leaving its context', e);
+        return;
+      }
       setGenerateError(e instanceof Error ? e.message : String(e));
       setGeneratingTopic(null);
+    } finally {
+      generationInFlight.current = false;
     }
+  }
+
+  async function handleGenerateGhost(node: TopicNode) {
+    await generateTopic(node.topic, node.ghostTitle || formatTopic(node.topic));
   }
 
   async function handleGenerateNewTopic(e: { preventDefault(): void }) {
@@ -292,46 +347,29 @@ export function TopicAtlas() {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
       || input;
-    setGeneratingTopic(topic);
-    setGenerateError(null);
-    try {
-      const generated = await generateLessonNow(
-        { title: input, topic, language: lang as 'en' | 'ru' },
-        repoId,
-      );
-      navigate(`/lesson/${generated.id}`);
-    } catch (e) {
-      setGenerateError(e instanceof Error ? e.message : String(e));
-      setGeneratingTopic(null);
-    }
+    await generateTopic(topic, input);
   }
 
-  if (allowedRepos.length === 0) {
+  if (!hasRepos) {
     return (
       <div className="empty">
-        <h2>Topic atlas</h2>
-        <p className="muted">Add a repo first — there's nothing to map yet.</p>
+        <h1>Topics</h1>
+        <p className="muted">Add a repo first to explore its lessons.</p>
       </div>
     );
   }
 
   if (error) {
-    return <div className="error">Couldn't load topics: {error}</div>;
-  }
-  if (!graph) {
-    return <div className="loading">Mapping topics…</div>;
-  }
-
-  if (graph.nodes.length === 0) {
     return (
       <div className="empty">
-        <h2>Topic atlas</h2>
-        <p className="muted">
-          No published lessons yet. Once atlas has written a few, they'll show up here as
-          a map you can pan through.
-        </p>
+        <h1>Topics</h1>
+        <p className="error-inline" role="alert">Couldn't load topics: {error}</p>
+        <button type="button" className="btn-secondary" onClick={() => setReload((value) => value + 1)}>Retry</button>
       </div>
     );
+  }
+  if (!graph) {
+    return <div className="loading" role="status">Loading topics…</div>;
   }
 
   const realNodes = graph.nodes.filter((n) => !n.isGhost);
@@ -344,29 +382,33 @@ export function TopicAtlas() {
     <div className="topic-atlas">
       <header className="topic-atlas-header">
         <div className="topic-atlas-header-row">
-          <h2>Topic atlas</h2>
-          <div className="topic-atlas-mode-toggle" role="group" aria-label="Atlas view mode">
-            <button
-              type="button"
-              className={mode === 'graph' ? 'atlas-mode-btn active' : 'atlas-mode-btn'}
-              onClick={() => setMode('graph')}
-            >
-              Graph
-            </button>
+          <h1>Topics</h1>
+          <div className="topic-atlas-mode-toggle" role="group" aria-label="Topic view">
             <button
               type="button"
               className={mode === 'list' ? 'atlas-mode-btn active' : 'atlas-mode-btn'}
+              aria-pressed={mode === 'list'}
               onClick={() => setMode('list')}
             >
               List
             </button>
+            <button
+              type="button"
+              className={mode === 'graph' ? 'atlas-mode-btn active' : 'atlas-mode-btn'}
+              aria-pressed={mode === 'graph'}
+              onClick={() => setMode('graph')}
+              disabled={graph.nodes.length === 0}
+            >
+              Graph
+            </button>
           </div>
         </div>
         <p className="muted">
-          Every topic atlas has been written for this repo. Bigger circles have more lessons;
-          lines connect topics that suggest each other as next steps.
+          {mode === 'list'
+            ? 'Explore the concepts in your lessons. Related topics are suggestions, not prerequisites.'
+            : 'Bigger circles have more lessons. Lines show suggested next topics, not prerequisites.'}
         </p>
-        <div className="topic-atlas-stats" aria-label="Atlas summary">
+        <div className="topic-atlas-stats" aria-label="Topic summary">
           <span className="atlas-stat">
             <strong>{realNodes.length}</strong> topics
           </span>
@@ -382,7 +424,7 @@ export function TopicAtlas() {
             </span>
           )}
         </div>
-        <div className="topic-atlas-quick-list" aria-label="Top topics">
+        {mode === 'graph' && <div className="topic-atlas-quick-list" aria-label="Top topics">
           {sortedNodes.slice(0, 10).map((n) => (
             <button
               key={n.topic}
@@ -397,8 +439,10 @@ export function TopicAtlas() {
               {formatTopic(n.topic)} · {n.count}
             </button>
           ))}
-        </div>
+        </div>}
         {isOwner && (
+          <details className="topic-create">
+            <summary>Generate a lesson on a new topic</summary>
           <form className="atlas-generate-form" onSubmit={(e) => void handleGenerateNewTopic(e)}>
             <input
               type="text"
@@ -420,13 +464,20 @@ export function TopicAtlas() {
                 : 'Generate →'}
             </button>
           </form>
+          </details>
         )}
         {generateError && (
           <p className="error-inline atlas-generate-error">{generateError}</p>
         )}
       </header>
 
-      {mode === 'graph' ? (
+      {graph.nodes.length === 0 ? (
+        <section className="empty">
+          <h2>No topics yet.</h2>
+          <p>Topics will appear as lessons become available in this project.</p>
+          <Link to="/" className="btn-secondary">Back to Learn</Link>
+        </section>
+      ) : mode === 'graph' ? (
         <div className="topic-atlas-canvas">
           <div className="topic-atlas-viewport">
             <svg
@@ -529,7 +580,7 @@ export function TopicAtlas() {
                       )}
                     </button>
                   ) : (
-                    <p className="muted small">Coming soon.</p>
+                    <p className="muted small">No lesson is ready for this topic yet.</p>
                   )}
                   {generateError && generatingTopic === null && (
                     <p className="error-inline">{generateError}</p>
@@ -573,7 +624,7 @@ export function TopicAtlas() {
                   <span className="topic-atlas-pill">{n.count} lesson{n.count === 1 ? '' : 's'}</span>
                 </header>
                 <ul>
-                  {n.lessons.slice(0, 4).map((l) => (
+                  {n.lessons.map((l) => (
                     <li key={l.id}>
                       <button
                         type="button"
