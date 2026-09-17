@@ -12,16 +12,21 @@ import {
   LessonProgress,
 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse } from '../shared/auth.js';
+import { getRecommendations } from './getRecommendations.js';
 
 export async function getLesson(
   req: HttpRequest,
   ctx: InvocationContext,
 ): Promise<HttpResponseInit> {
+  // Cached clients still use this reserved collection URL. Route order must not
+  // turn it into a Cosmos lookup for a lesson whose id is "recommended".
+  const id = req.params.id;
+  if (id?.toLowerCase() === 'recommended') return getRecommendations(req, ctx);
+
   const r = await resolveRequest(req);
   if (isHttpResponse(r)) return r;
   const { userId, repoId } = r;
 
-  const id = req.params.id;
   if (!id) return { status: 400, jsonBody: { error: 'Missing id' } };
 
   try {

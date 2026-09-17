@@ -132,6 +132,13 @@
   margin: 0;
 }
 
+.learn-notice > div { min-width: 0; flex: 1; }
+.learn-notice .learn-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
 .learn-notice .learn-error-detail {
   margin-top: 0.35rem;
   color: var(--error);

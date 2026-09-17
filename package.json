@@ -11,7 +11,7 @@
     "lint": "echo \"No linter configured yet\"",
     "test": "playwright test",
     "test:typecheck": "tsc --project tsconfig.tests.json",
-    "test:portal": "playwright test learningPortal.spec.ts adaptiveScoring.spec.ts relatedTopics.spec.ts recentlyRead.spec.ts",
+    "test:portal": "playwright test learningPortal.spec.ts adaptiveScoring.spec.ts relatedTopics.spec.ts recentlyRead.spec.ts apiRoutes.spec.ts",
     "test:install": "playwright install chromium --with-deps"
   },
   "dependencies": {
