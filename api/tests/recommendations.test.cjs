@@ -25,7 +25,7 @@ function load(relative, dependencies = {}) {
   return exports;
 }
 
-function endpoints({ forbidden = false, readAll = false } = {}) {
+function endpoints({ forbidden = false, readAll = false, savedUnread = false } = {}) {
   const registrations = new Map();
   const queries = [];
   const itemReads = [];
@@ -40,9 +40,10 @@ function endpoints({ forbidden = false, readAll = false } = {}) {
     title: `Example ${lesson.id}`, status: 'published', body: 'Synthetic lesson.',
     citations: [], suggested_next: [], read_minutes: 4,
   }));
-  const progress = (readAll ? lessons : [lessons[0]]).map(lesson => ({
+  const progress = (savedUnread ? [lessons[2]] : readAll ? lessons : [lessons[0]]).map(lesson => ({
     id: `example-reader_${lesson.id}`, userId: 'example-reader', repoId: 'example-repo',
-    lessonId: lesson.id, status: 'read', saved: false, readAt: '2026-01-05',
+    lessonId: lesson.id, status: savedUnread ? 'unread' : 'read', saved: savedUnread,
+    readAt: savedUnread ? null : '2026-01-05',
   }));
   const container = (kind, records) => ({
     items: {
@@ -112,6 +113,20 @@ test('recommendations return the existing ranking contract, scoped to the reader
   assert.equal(api.queries[0].options.partitionKey, 'example-reader');
   assert.equal(api.queries[1].options.partitionKey, 'example-repo');
   assert.equal(api.authRequests.length, 1);
+});
+
+test('unread saved lessons boost their topic without implying that its depth was read', async () => {
+  const api = endpoints({ savedUnread: true });
+  const response = await api.recommendations.getRecommendations(api.request(), api.context);
+  const [first] = response.jsonBody.lessons;
+  assert.equal(response.status, 200);
+  assert.equal(response.jsonBody.lessons.length, 4);
+  assert.equal(first.id, 'intro');
+  assert.equal(first.recommendation_score, 7);
+  assert.equal(first.recommendation_reason, 'Saved interest: new topic — great starting point');
+  assert.ok(response.jsonBody.lessons.every(lesson => lesson.status === 'published'));
+  assert.equal(response.jsonBody.lessons.find(lesson => lesson.id === 'deep').saved, true);
+  assert.equal(response.jsonBody.lessons.find(lesson => lesson.id === 'deep').recommendation_score, 3);
 });
 
 for (const id of ['recommended', 'RECOMMENDED']) {

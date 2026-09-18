@@ -60,6 +60,37 @@ test.describe('buildTopicProfile', () => {
 
     expect(profile.get('react')?.hasSaved).toBe(true);
   });
+
+  test('captures unread saved interest without granting reading coverage', () => {
+    const saved = lesson({ id: 'saved', topic: 'react', depth: 'deep' });
+    const profile = buildTopicProfile(
+      [saved],
+      new Map([[saved.id, progress({ status: 'unread', saved: true })]]),
+      (l) => l.id,
+    );
+
+    expect(profile.get('react')).toEqual({ highestDepthRead: null, hasSaved: true });
+    expect(scoreLesson(lesson({ id: 'intro', topic: 'react', depth: 'intro' }), profile)).toEqual({
+      score: 7, reason: 'Saved interest: new topic — great starting point',
+    });
+    expect(scoreLesson(saved, profile).score).toBe(3);
+  });
+
+  test('unread saved depth does not overwrite confirmed reading coverage', () => {
+    const profile = buildTopicProfile(
+      [
+        lesson({ id: 'read', topic: 'react', depth: 'intro' }),
+        lesson({ id: 'saved', topic: 'react', depth: 'deep' }),
+      ],
+      new Map([
+        ['read', progress()],
+        ['saved', progress({ status: 'unread', saved: true })],
+      ]),
+      (l) => l.id,
+    );
+    expect(profile.get('react')).toEqual({ highestDepthRead: 'intro', hasSaved: true });
+    expect(scoreLesson(lesson({ id: 'next', topic: 'react', depth: 'intermediate' }), profile).score).toBe(7);
+  });
 });
 
 test.describe('scoreLesson', () => {
