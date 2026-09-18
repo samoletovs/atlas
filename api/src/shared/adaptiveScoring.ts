@@ -28,19 +28,18 @@ export interface ScorableProgress {
 }
 
 /**
- * Build a map of topic → { highestDepthRead, hasSaved } from the user's
- * read lessons for this repo.
+ * Build reading coverage and saved interest independently for this repo.
  */
 export function buildTopicProfile<L extends ScorableLesson>(
-  readLessons: L[],
+  lessons: L[],
   progressByLesson: Map<string, ScorableProgress>,
   lessonId: (lesson: L) => string,
 ): Map<string, TopicProfile> {
   const profile = new Map<string, TopicProfile>();
 
-  for (const lesson of readLessons) {
+  for (const lesson of lessons) {
     const prog = progressByLesson.get(lessonId(lesson));
-    if (!prog || prog.status !== 'read') continue;
+    if (!prog || (prog.status !== 'read' && !prog.saved)) continue;
 
     const topic = lesson.topic;
     const existing: TopicProfile = profile.get(topic) ?? {
@@ -52,7 +51,7 @@ export function buildTopicProfile<L extends ScorableLesson>(
     const prevRank = existing.highestDepthRead
       ? DEPTH_RANK[existing.highestDepthRead]
       : 0;
-    if (currentRank > prevRank) {
+    if (prog.status === 'read' && currentRank > prevRank) {
       existing.highestDepthRead = lesson.depth;
     }
     if (prog.saved) {

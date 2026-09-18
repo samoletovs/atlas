@@ -11,7 +11,9 @@
  * dev loop works against the new schema.
  */
 import { HttpRequest, HttpResponseInit } from '@azure/functions';
-import { reposContainer, repoSharesContainer, Repo, RepoShare } from './cosmos.js';
+import { repoSharesContainer, Repo, RepoShare } from './cosmos.js';
+import { parseGithubUrl } from './github.js';
+import { AmbiguousRepoError, findRepoById } from './repos.js';
 
 export interface ClientPrincipal {
   userId: string;
@@ -33,7 +35,7 @@ export interface ResolvedRequest {
   userId: string;
   /** The `<owner>__<repo>` id used as the partition key on `lessons_v2`. */
   repoId: string;
-  /** Owner login (partition key on `repos`). Derived from repoId. */
+  /** Atlas owner login (partition key on `repos`), from the stored doc. */
   ownerLogin: string;
   /** 'owner' if userId === repos.ownerId, else 'member'. */
   role: AtlasRole;
@@ -75,11 +77,16 @@ export function isAuthenticated(p: ClientPrincipal | null): boolean {
   return p.identityProvider === 'github' || p.identityProvider === 'local';
 }
 
-function parseRepoIdParam(req: HttpRequest): string {
+function parseRepoIdParam(req: HttpRequest): string | null {
   const requested = req.query.get('repoId');
-  return requested && /^[a-z0-9_]+__[a-z0-9_-]+$/i.test(requested)
-    ? requested
-    : DEFAULT_REPO_ID;
+  if (requested === null) return DEFAULT_REPO_ID;
+  const separator = requested.indexOf('__');
+  if (separator < 1) return null;
+  const owner = requested.slice(0, separator);
+  const repo = requested.slice(separator + 2);
+  // URL parsing also accepts a trailing slash/space, which an ID must not contain.
+  if (!/^[a-z0-9._-]{1,100}$/i.test(repo)) return null;
+  return parseGithubUrl(`https://github.com/${owner}/${repo}`) ? requested : null;
 }
 
 /**
@@ -90,15 +97,7 @@ export async function getRoleForRepo(
   userId: string,
   repoId: string,
 ): Promise<{ role: AtlasRole; repo: Repo } | null> {
-  const ownerLogin = repoId.split('__', 2)[0];
-  const repos = reposContainer();
-  let repo: Repo | undefined;
-  try {
-    const { resource } = await repos.item(repoId, ownerLogin).read<Repo>();
-    repo = resource ?? undefined;
-  } catch (e: unknown) {
-    if (e instanceof Error && (e as { code?: number }).code !== 404) throw e;
-  }
+  const repo = await findRepoById(repoId);
   if (!repo) return null;
 
   if (repo.ownerId === userId) {
@@ -135,10 +134,20 @@ export async function resolveRequest(
   }
 
   const repoId = parseRepoIdParam(req);
+  if (repoId === null) {
+    return { status: 400, jsonBody: { error: 'Invalid repoId (expected owner__repository)' } };
+  }
   const userId = principal.userDetails.toLowerCase();
-  const ownerLogin = repoId.split('__', 2)[0];
 
-  const access = await getRoleForRepo(userId, repoId);
+  let access: Awaited<ReturnType<typeof getRoleForRepo>>;
+  try {
+    access = await getRoleForRepo(userId, repoId);
+  } catch (error) {
+    if (error instanceof AmbiguousRepoError) {
+      return { status: 409, jsonBody: { error: error.message } };
+    }
+    throw error;
+  }
   if (!access) {
     return { status: 403, jsonBody: { error: 'Forbidden' } };
   }
@@ -147,7 +156,7 @@ export async function resolveRequest(
     principal,
     userId,
     repoId,
-    ownerLogin,
+    ownerLogin: access.repo.ownerId,
     role: access.role,
     repo: access.repo,
   };
@@ -179,4 +188,3 @@ export function requireOwner(
   }
   return r;
 }
-

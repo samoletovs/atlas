@@ -1,4 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react';
+import { notifyLessonProgress } from './lessonProgress';
 
 interface ReadScope {
   ids: Set<string>;
@@ -24,6 +25,7 @@ export function markRecentlyRead(id: string, repoId: string): void {
   scope.ids.add(id);
   scope.version += 1;
   for (const listener of [...scope.listeners]) listener();
+  notifyLessonProgress(repoId);
 }
 
 export function isRecentlyRead(id: string, repoId: string): boolean {

@@ -15,6 +15,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lesson, listLessons, generateLessonNow } from '../lib/api';
 import { useLang, useRepo } from '../App';
+import { useGenerationQuota } from '../lib/useGenerationQuota';
+import { GenerationQuotaNotice } from '../components/GenerationQuotaNotice';
 
 interface TopicNode {
   topic: string;
@@ -246,6 +248,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
   hasRepos: boolean;
 }) {
   const navigate = useNavigate();
+  const quota = useGenerationQuota(isOwner);
   const contextKey = `${repoId}\u0000${lang}`;
   const [result, setResult] = useState<{ key: string; lessons: Lesson[] | null; error: string | null }>({
     key: contextKey, lessons: null, error: null,
@@ -309,7 +312,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
   }, [graph]);
 
   async function generateTopic(topic: string, title: string) {
-    if (!isOwner || generationInFlight.current) return;
+    if (!isOwner || quota.reached || generationInFlight.current) return;
     generationInFlight.current = true;
     const startedContext = contextKey;
     setGeneratingTopic(topic);
@@ -331,6 +334,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
       setGeneratingTopic(null);
     } finally {
       generationInFlight.current = false;
+      void quota.refresh();
     }
   }
 
@@ -341,7 +345,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
   async function handleGenerateNewTopic(e: { preventDefault(): void }) {
     e.preventDefault();
     const input = newTopicInput.trim();
-    if (!input || !isOwner || generatingTopic) return;
+    if (!input || !isOwner || quota.reached || generatingTopic) return;
     const topic = input
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
@@ -450,14 +454,14 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
               placeholder="Generate lesson for any topic…"
               value={newTopicInput}
               onChange={(e) => setNewTopicInput(e.target.value)}
-              disabled={!!generatingTopic}
+              disabled={!!generatingTopic || quota.reached}
               maxLength={200}
               aria-label="New topic name"
             />
             <button
               type="submit"
               className="btn-primary atlas-generate-btn"
-              disabled={!!generatingTopic || !newTopicInput.trim()}
+              disabled={!!generatingTopic || quota.reached || !newTopicInput.trim()}
             >
               {generatingTopic && !graph.nodes.some((n) => n.topic === generatingTopic)
                 ? 'Generating…'
@@ -469,6 +473,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
         {generateError && (
           <p className="error-inline atlas-generate-error">{generateError}</p>
         )}
+        {isOwner && <GenerationQuotaNotice quota={quota} className="error-inline" />}
       </header>
 
       {graph.nodes.length === 0 ? (
@@ -569,7 +574,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
                       type="button"
                       className="btn-primary atlas-ghost-generate"
                       onClick={() => void handleGenerateGhost(activeNode)}
-                      disabled={!!generatingTopic}
+                      disabled={!!generatingTopic || quota.reached}
                     >
                       {generatingTopic === activeNode.topic ? (
                         <>
@@ -662,7 +667,7 @@ function TopicAtlasContent({ repoId, lang, isOwner, hasRepos }: {
                           type="button"
                           className="btn-link next-generate"
                           onClick={() => void handleGenerateGhost(n)}
-                          disabled={!!generatingTopic}
+                          disabled={!!generatingTopic || quota.reached}
                         >
                           {busy ? (
                             <>

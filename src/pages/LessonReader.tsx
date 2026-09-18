@@ -14,9 +14,12 @@ import {
   LessonStateAction,
 } from '../lib/api';
 import { LessonMeta } from '../components/LessonMeta';
+import { GenerationQuotaNotice } from '../components/GenerationQuotaNotice';
 import { renderMarkdown } from '../lib/markdown';
 import { findRelatedTopics } from '../lib/relatedTopics';
 import { markRecentlyRead } from '../lib/recentlyRead';
+import { notifyLessonProgress } from '../lib/lessonProgress';
+import { useGenerationQuota } from '../lib/useGenerationQuota';
 import { useLang, useRepo } from '../App';
 import './LessonReader.css';
 
@@ -43,7 +46,7 @@ export function LessonReader() {
   // Each reading context owns its drafts, disclosures, and pending requests.
   return (
     <LessonReaderContent
-      key={JSON.stringify([repoId, lang, id])}
+      key={JSON.stringify([repoId, lang, id, role])}
       id={id}
       repoId={repoId}
       lang={lang}
@@ -64,6 +67,7 @@ function LessonReaderContent({
   isOwner: boolean;
 }) {
   const navigate = useNavigate();
+  const quota = useGenerationQuota(isOwner);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -197,13 +201,14 @@ function LessonReaderContent({
         }
         return (
           `<button type="button" class="topic-link-missing"` +
+          (quota.reached ? ' disabled title="Your generation limit has been reached."' : '') +
           ` aria-label="Generate lesson about ${escAttr(label)}"` +
           ` data-topic-generate="${escAttr(slug)}"` +
           ` data-topic-title="${escAttr(label)}">${label}</button>`
         );
       },
     });
-  }, [lessonBody, topicIndex, isOwner, libraryReady, libraryError]);
+  }, [lessonBody, topicIndex, isOwner, libraryReady, libraryError, quota.reached]);
 
   function handleBodyClick(e: React.MouseEvent<HTMLDivElement>) {
     const t = e.target;
@@ -220,7 +225,7 @@ function LessonReaderContent({
 
     // Missing-topic generate button → inline generation, navigate on success.
     const btn = t.closest<HTMLButtonElement>('button.topic-link-missing');
-    if (btn && !btn.disabled && isOwner && libraryReady) {
+    if (btn && !btn.disabled && isOwner && libraryReady && !quota.reached) {
       e.preventDefault();
       const slug = btn.getAttribute('data-topic-generate');
       const titleAttr = btn.getAttribute('data-topic-title');
@@ -250,6 +255,7 @@ function LessonReaderContent({
         })
         .finally(() => {
           generatingTopicsRef.current.delete(slug);
+          void quota.refresh();
         });
     }
   }
@@ -264,6 +270,8 @@ function LessonReaderContent({
       const updated = await updateLessonState(lesson.id, action, repoId);
       if (action === 'mark_read') {
         markRecentlyRead(lesson.id, repoId);
+      } else if (action === 'save' || action === 'unsave') {
+        notifyLessonProgress(repoId);
       }
       if (!activeRef.current) return;
       if (action === 'mark_read') {
@@ -344,7 +352,8 @@ function LessonReaderContent({
   }
 
   async function handleQueue(idx: number, suggestion: Lesson['suggested_next'][number]) {
-    if (!lesson || !isOwner || !libraryReady || generatingTopicsRef.current.has(suggestion.topic)) return;
+    if (!lesson || !isOwner || !libraryReady || quota.reached
+      || generatingTopicsRef.current.has(suggestion.topic)) return;
     generatingTopicsRef.current.add(suggestion.topic);
     setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'generating' } }));
     try {
@@ -363,6 +372,7 @@ function LessonReaderContent({
       setSuggestionStates((s) => ({ ...s, [idx]: { kind: 'error', message: msg } }));
     } finally {
       generatingTopicsRef.current.delete(suggestion.topic);
+      void quota.refresh();
     }
   }
 
@@ -496,6 +506,8 @@ function LessonReaderContent({
           </div>
         </details>
       )}
+
+      {isOwner && <GenerationQuotaNotice quota={quota} className="form-error" />}
 
       {lesson.body.trim() ? (
         <div
@@ -667,7 +679,7 @@ function LessonReaderContent({
                       type="button"
                       className="btn-link next-generate"
                       onClick={() => handleQueue(i, s)}
-                      disabled={state.kind === 'generating'}
+                      disabled={state.kind === 'generating' || quota.reached}
                       aria-busy={state.kind === 'generating'}
                     >
                       {state.kind === 'generating' ? 'Generating…' : 'Generate this →'}

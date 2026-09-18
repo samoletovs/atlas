@@ -68,6 +68,9 @@ jobs:
       - name: Build app
         run: npm run build
 
+      - name: Verify built service worker
+        run: npm run test:pwa
+
       - name: Verify build output
         run: |
           # A successful build must produce a real bundle, not the source

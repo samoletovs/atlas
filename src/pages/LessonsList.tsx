@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLang, useRepo } from '../App';
 import { LessonMeta } from '../components/LessonMeta';
 import { listLessons, type Lesson } from '../lib/api';
-import { useRecentlyReadVersion } from '../lib/recentlyRead';
+import { useLessonProgressVersion } from '../lib/lessonProgress';
 import { LearnHome } from './LearnHome';
 import './LessonsList.css';
 
@@ -34,7 +34,7 @@ function Collection({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const readVersion = useRecentlyReadVersion(repoId);
+  const progressVersion = useLessonProgressVersion(repoId);
   const heading = status === 'saved' ? 'Saved' : status === 'read' ? 'History' : 'Lessons';
 
   useEffect(() => {
@@ -56,7 +56,7 @@ function Collection({
       },
     );
     return () => { cancelled = true; };
-  }, [status, lang, repoId, attempt, readVersion]);
+  }, [status, lang, repoId, attempt, progressVersion]);
 
   return (
     <section className="lesson-collection" aria-labelledby="collection-title">

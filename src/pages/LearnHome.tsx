@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useLang, useMe, useRepo } from '../App';
+import { useLang, useRepo } from '../App';
 import { LessonMeta } from '../components/LessonMeta';
 import {
   generateLessonNow,
@@ -10,7 +10,9 @@ import {
   type LearningPathLesson,
   type Lesson,
 } from '../lib/api';
-import { isRecentlyRead, useRecentlyReadVersion } from '../lib/recentlyRead';
+import { isRecentlyRead } from '../lib/recentlyRead';
+import { useLessonProgressVersion } from '../lib/lessonProgress';
+import { useGenerationQuota } from '../lib/useGenerationQuota';
 import { listDueReviewCards, markReviewDone, reviewStepLabel } from '../lib/spacedReview';
 import './LearnHome.css';
 
@@ -122,19 +124,21 @@ function LearnHomeContent({
   justRead: string | null;
 }) {
   const navigate = useNavigate();
-  const { quota, refreshMe } = useMe();
-  const readVersion = useRecentlyReadVersion(repoId);
+  const {
+    reached: quotaReached, refreshing: quotaRefreshing, error: quotaError, refresh: refreshQuota,
+  } = useGenerationQuota(role === 'owner');
+  const progressVersion = useLessonProgressVersion(repoId);
   const recommendations = useLessonSource(useCallback(
-    () => getRecommendations(lang, repoId), [lang, repoId],
+    () => getRecommendations(lang, repoId), [lang, repoId, progressVersion],
   ));
   const published = useLessonSource(useCallback(
-    () => listLessons('published', lang, repoId), [lang, repoId],
+    () => listLessons('published', lang, repoId), [lang, repoId, progressVersion],
   ));
   const queued = useLessonSource(useCallback(
     () => listLessons('queued', lang, repoId), [lang, repoId],
   ));
   const read = useLessonSource(useCallback(
-    () => listLessons('read', lang, repoId), [lang, repoId, readVersion],
+    () => listLessons('read', lang, repoId), [lang, repoId, progressVersion],
   ));
   const [reviewVersion, setReviewVersion] = useState(0);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -143,65 +147,12 @@ function LearnHomeContent({
   const active = useRef(true);
   const currentRole = useRef(role);
   const generatingIds = useRef(new Set<string>());
-  const quotaRequest = useRef(false);
-  const [quotaNow, setQuotaNow] = useState(Date.now);
-  const [quotaRefreshing, setQuotaRefreshing] = useState(false);
-  const [quotaError, setQuotaError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     active.current = true;
     return () => { active.current = false; };
   }, []);
   useLayoutEffect(() => { currentRole.current = role; }, [role]);
-
-  const refreshQuota = useCallback(async () => {
-    if (quotaRequest.current) return;
-    quotaRequest.current = true;
-    if (active.current) {
-      setQuotaNow(Date.now());
-      setQuotaRefreshing(true);
-      setQuotaError(null);
-    }
-    try {
-      const me = await refreshMe();
-      if (!me) throw new Error('Account limits are unavailable. Please sign in again.');
-    } catch (error: unknown) {
-      if (active.current) setQuotaError(errorMessage(error));
-      else console.warn('Daily quota refresh failed after navigation', error);
-    } finally {
-      quotaRequest.current = false;
-      if (active.current) setQuotaRefreshing(false);
-    }
-  }, [refreshMe]);
-
-  useEffect(() => {
-    const expiresAt = Date.parse(quota.resetAt);
-    if (role !== 'owner' || quota.limit === null || !Number.isFinite(expiresAt)) return;
-    let stopped = false;
-    let timer = 0;
-    const refreshIfExpired = () => {
-      if (!stopped && active.current && !document.hidden && Date.now() >= expiresAt) {
-        setQuotaNow(Date.now());
-        void refreshQuota();
-      }
-    };
-    const schedule = () => {
-      timer = window.setTimeout(() => {
-        if (stopped) return;
-        if (Date.now() < expiresAt) schedule();
-        else refreshIfExpired();
-      }, Math.max(0, Math.min(expiresAt - Date.now(), 2_147_483_647)));
-    };
-    schedule();
-    window.addEventListener('focus', refreshIfExpired);
-    document.addEventListener('visibilitychange', refreshIfExpired);
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-      window.removeEventListener('focus', refreshIfExpired);
-      document.removeEventListener('visibilitychange', refreshIfExpired);
-    };
-  }, [quota.resetAt, quota.limit, role, refreshQuota]);
 
   const belongsHere = useCallback((lesson: Lesson) =>
     lesson.language === lang && (!lesson.repoId || lesson.repoId === repoId), [lang, repoId]);
@@ -247,8 +198,6 @@ function LearnHomeContent({
     queued.loading && 'queued lessons',
     read.loading && 'reading history',
   ].filter(Boolean);
-  const quotaReached = quota.limit === 0
-    || (quota.remaining === 0 && Date.parse(quota.resetAt) > quotaNow);
 
   async function generate(lesson: Lesson) {
     if (currentRole.current !== 'owner' || quotaReached || generatingIds.current.has(lesson.id)) return;

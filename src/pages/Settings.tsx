@@ -27,18 +27,25 @@ export function Settings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [okMessage, setOkMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(null);
     (async () => {
-      const me = await fetchMe();
-      if (cancelled) return;
-      setTokenInfo(me?.githubToken ?? null);
+      try {
+        const me = await fetchMe();
+        if (!me) throw new Error('Your session has expired. Sign in again.');
+        if (!cancelled) setTokenInfo(me.githubToken);
+      } catch (err) {
+        if (!cancelled) setLoadError(`Could not load GitHub access. ${err instanceof Error ? err.message : String(err)}`);
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAttempt]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -101,8 +108,15 @@ export function Settings() {
           </p>
         </header>
 
-        {loading ? (
-          <p className="muted small">Loading…</p>
+        {loadError ? (
+          <div>
+            <p className="form-error" role="alert">{loadError}</p>
+            <button type="button" className="btn-secondary" onClick={() => setLoadAttempt(attempt => attempt + 1)}>
+              Retry GitHub access
+            </button>
+          </div>
+        ) : loading ? (
+          <p className="muted small" role="status">Loading…</p>
         ) : tokenInfo ? (
           <div className="settings-token-card">
             <div className="settings-token-status">
@@ -160,8 +174,8 @@ export function Settings() {
                 browser again. Revoke at any time from GitHub.
               </span>
             </label>
-            {error && <div className="form-error">{error}</div>}
-            {okMessage && <div className="form-ok">{okMessage}</div>}
+            {error && <div className="form-error" role="alert">{error}</div>}
+            {okMessage && <div className="form-ok" role="status">{okMessage}</div>}
             <div className="form-actions">
               <button type="submit" className="btn-primary" disabled={busy || !pasteValue.trim()}>
                 {busy ? 'Saving…' : 'Save token'}
@@ -169,8 +183,8 @@ export function Settings() {
             </div>
           </form>
         )}
-        {error && tokenInfo && <div className="form-error">{error}</div>}
-        {okMessage && tokenInfo && <div className="form-ok">{okMessage}</div>}
+        {error && tokenInfo && <div className="form-error" role="alert">{error}</div>}
+        {okMessage && tokenInfo && <div className="form-ok" role="status">{okMessage}</div>}
       </section>
 
       <section className="settings-section">

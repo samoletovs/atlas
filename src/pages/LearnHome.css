@@ -41,16 +41,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: clamp(0.5rem, 2vw, 1.5rem);
   min-height: 52px;
-  min-width: 15rem;
+  min-width: min(15rem, 100%);
+  max-width: 100%;
   padding: 0.8rem 1.15rem;
   background: var(--accent-ink);
   color: var(--accent-surface);
   text-decoration: none;
   font-weight: 700;
   line-height: 1.3;
-  white-space: nowrap;
+  white-space: normal;
   transition: opacity 120ms ease;
 }
 
@@ -342,7 +343,7 @@
   }
 
   @media (max-width: 600px) {
-    .learn-read-link { width: 100%; min-width: 0; }
+    .learn-read-link { width: 100%; min-width: 0; padding-inline: 0.75rem; }
   }
 
   .learn-notice,

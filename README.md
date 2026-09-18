@@ -15,7 +15,7 @@ feedback, and follow-up questions.
 - Connects a GitHub repository to a user's learning profile.
 - Generates cited, phone-readable lessons from repository activity.
 - Tracks topic coverage, reading progress, ratings, and review cards.
-- Supports follow-up questions, sharing, quotas, and offline PWA reading.
+- Supports follow-up questions, sharing, quotas, and cached-lesson fallback.
 
 ## Learning experience
 
@@ -29,6 +29,11 @@ as an optional view. **Saved** and **History** keep revisiting straightforward. 
 reader retains source references, citations, contextual questions, feedback and next
 suggestions without turning the home page into a chatbot or a deployment dashboard.
 
+Confirmed saves and reads refresh the relevant repository's collections even when
+the reader has already navigated away. Saving an unread lesson contributes topic
+interest to recommendations without counting it as read. Generation entry points
+share current quota state and provide recovery when account limits cannot refresh.
+
 The Clear way design uses a yellow reading band, cool-neutral surfaces, comfortable
 humanist typography and both light and dark themes. Reading depth means coverage, not
 mastery; lesson publication does not imply that software was deployed. See
@@ -38,7 +43,25 @@ Recommendations use `GET /api/recommendations`, outside the parameterized
 `/api/lessons/{id}` namespace. The previous `/api/lessons/recommended` URL remains
 compatible through explicit dispatch, so cached clients cannot mistake it for a
 lesson id. Both URLs retain the same authorization and recommendation response
-contract; the PWA cache covers both.
+contract; the PWA cache covers both. Lesson and recommendation requests prefer
+fresh network responses so confirmed progress is not replaced by an older
+snapshot. Previously cached responses remain available on network failure;
+explicit HTTP errors are surfaced rather than replaced by cached success.
+This fallback supports previously fetched content in an open session; account
+verification and a fresh authenticated startup still require connectivity.
+`npm run build && npm run test:pwa` checks the generated service worker in a
+real browser against a local synthetic server, including offline fallback and
+auth/account exclusions.
+
+## Repository access
+
+Repository IDs identify the GitHub owner and name (`owner__repository`), but the
+Atlas owner is the user recorded on the repository document. Access and shared
+repository discovery use that stored owner, including for organization and
+third-party repositories. Malformed explicit IDs return 400 rather than silently
+selecting a default repository. Ambiguous ownership records return 409 and require
+operator resolution; the lookup does not provide transactional uniqueness across
+Cosmos partitions.
 
 ## Stack
 

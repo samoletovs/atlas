@@ -83,20 +83,11 @@ export async function getRecommendations(
     )
     .fetchAll();
 
-  // 3) Separate read from unread.
-  const readLessons: LessonV2[] = [];
-  const unreadLessons: LessonV2[] = [];
-  for (const l of allLessons) {
-    const prog = progressByLesson.get(l.id);
-    if (prog?.status === 'read') {
-      readLessons.push(l);
-    } else {
-      unreadLessons.push(l);
-    }
-  }
+  // 3) Only unread lessons are recommendation candidates.
+  const unreadLessons = allLessons.filter((l) => progressByLesson.get(l.id)?.status !== 'read');
 
-  // 4) Build topic profile from read lessons.
-  const topicProfile = buildTopicProfile(readLessons, progressByLesson, (l) => l.id);
+  // 4) Saved interest includes unread lessons; reading coverage still requires a confirmed read.
+  const topicProfile = buildTopicProfile(allLessons, progressByLesson, (l) => l.id);
 
   // 5) Score each unread lesson and sort descending.
   const scored: LessonRecommendation[] = unreadLessons.map((l) => {

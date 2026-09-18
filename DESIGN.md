@@ -209,11 +209,11 @@ Reading text uses the `reading` role and a maximum measure of 68ch. At the curre
 
 The shell centers a maximum 1180px content area with the fluid `page-gutter` on each side; its outer maximum is `calc(var(--content-width) + 2 * var(--page-gutter))`. Shell bottom padding is 4rem. Main content starts 2rem below navigation, reduced to 1.25rem at 600px and below. Learn has no extra top padding. Saved and History use a 960px maximum collection width; the centered reader is 100% wide up to 68ch, with 3rem bottom padding.
 
-The sticky top bar places brand/repository, navigation, and account controls in three columns. At 1000px and below it becomes brand/account above a full-width navigation row. At 600px and below, Learn, Topics, Saved, and History occupy four equal columns rather than disappearing into a menu. Repository and account labels truncate within their controls; lesson content wraps.
+The sticky top bar places brand/repository, navigation, and account controls in three columns. At 1000px and below it becomes brand/account above a full-width navigation row. At 600px and below, the groups wrap according to available space; the repository control keeps a usable minimum instead of shrinking to its arrow. Learn, Topics, Saved, and History remain visible in content-sized links that can wrap into another row when text is enlarged. Repository and account labels truncate within their controls; lesson content wraps.
 
 The lead band places lesson content beside the reading CTA, with relevance spanning the row below. Its columns collapse at 900px; the CTA becomes full width at 600px. Context and review/queued rows stack at 700px. At 380px, the band inset becomes 1.3rem and its title 1.85rem. Section spacing uses the fluid `section` value; ordinary rows are separated by rules rather than repeated raised tiles.
 
-Reader actions wrap; at 480px they make the completion action and form submit buttons full width, place the completion hint on its own row, and stack disclosure hints. Collection error notices stack at 500px; collection row padding becomes `1.25rem 0`. Topic list rows stack at 600px. The optional flat topic graph places details alongside at 880px and above, below at 879px and below; its own viewport scrolls horizontally without widening the page.
+Reader header and completion actions wrap; at 480px they make the completion action and form submit buttons full width, place the completion hint on its own row, and stack disclosure hints. Collection error notices stack at 500px; collection row padding becomes `1.25rem 0`. Topic list rows stack at 600px, and lesson-title buttons wrap in both list and graph details. The optional flat topic graph places details alongside at 880px and above, below at 879px and below; its own viewport scrolls horizontally without widening the page.
 
 ## Elevation & Depth
 
@@ -233,9 +233,9 @@ Solid one-pixel borders and horizontal rules provide structure. Reader quotation
 
 Flat, legible, and unmistakably actionable. Shared primary buttons use yellow fill, accent ink, `button` corners, and the frontmatter padding; hover uses `accent-hover`. Shared secondary buttons are transparent with a strong border, changing the border to muted foreground on hover.
 
-The signature reading CTA in the yellow band inverts that pair, uses weight 700 and line-height 1.3, and has a 52px minimum height and 15rem minimum width before its phone override. Hover changes opacity to 0.86; focus is an accent-ink outline on the yellow band, not the ordinary blue ring.
+The signature reading CTA in the yellow band inverts that pair, uses weight 700 and line-height 1.3, and has a 52px minimum height and a 15rem preferred minimum width capped by available space. The phone override fills its container, reduces inline padding to 0.75rem, and allows the label to wrap at enlarged text sizes. Hover changes opacity to 0.86; focus is an accent-ink outline on the yellow band, not the ordinary blue ring.
 
-Reader primary, secondary, and feedback controls use 0.9375rem type, weight 600, line-height 1.4, and a 44px minimum height. The completion action is at least 48px high and 10rem wide. Reader primary hover keeps the yellow fill and changes its border to accent ink; secondary hover changes to the card-hover surface. A saved lesson uses yellow fill and accent ink. Disabled reader buttons use opacity 0.65 and a not-allowed cursor. Learn recovery buttons retain their transparent surface, change background on hover, and use muted text when disabled.
+Reader primary, secondary, and feedback controls use 0.9375rem type, weight 600, line-height 1.4, and a 44px minimum height. The completion action is at least 48px high with a 10rem preferred minimum width capped by its container. Reader primary hover keeps the yellow fill and changes its border to accent ink; secondary hover changes to the card-hover surface. A saved lesson uses yellow fill and accent ink. Disabled reader buttons use opacity 0.65 and a not-allowed cursor. Learn recovery buttons retain their transparent surface, change background on hover, and use muted text when disabled.
 
 ### Navigation and retrieval
 

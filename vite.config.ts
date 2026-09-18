@@ -46,9 +46,10 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: LESSON_API_CACHE_PATTERN,
-            handler: 'StaleWhileRevalidate',
+            handler: 'NetworkFirst',
             options: {
               cacheName: 'atlas-api-lessons',
+              cacheableResponse: { statuses: [200] },
               expiration: {
                 maxEntries: 200,
                 maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
