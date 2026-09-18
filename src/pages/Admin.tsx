@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useMe, useRepo } from '../App';
 import {
@@ -34,6 +34,17 @@ export function Admin() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [busyLogin, setBusyLogin] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const requestVersion = useRef(0);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      requestVersion.current++;
+    };
+  }, []);
 
   // P4: autonomous-generation settings. Initialised from the repo entry on
   // `/api/me`; fall back to platform defaults if absent.
@@ -75,12 +86,15 @@ export function Admin() {
   );
 
   const refresh = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoadError(null);
     try {
       const data = await listShares(repoId);
-      setShares(data);
+      if (mounted.current && version === requestVersion.current) setShares(data);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : String(err));
+      if (mounted.current && version === requestVersion.current) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+      }
     }
   }, [repoId]);
 
@@ -100,25 +114,28 @@ export function Admin() {
     setInviteError(null);
     try {
       await addShare(repoId, login);
+      if (!mounted.current) return;
       setInviteLogin('');
       await refresh();
     } catch (err) {
-      setInviteError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setInviteError(err instanceof Error ? err.message : String(err));
     } finally {
-      setInviteBusy(false);
+      if (mounted.current) setInviteBusy(false);
     }
   }
 
   async function handleRevoke(login: string) {
     if (!confirm(`Revoke ${login}'s access to ${repo?.name ?? repoId}?`)) return;
     setBusyLogin(login);
+    setRevokeError(null);
     try {
       await revokeShare(repoId, login);
+      if (!mounted.current) return;
       await refresh();
     } catch (err) {
-      alert(`Revoke failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (mounted.current) setRevokeError(`Revoke failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setBusyLogin(null);
+      if (mounted.current) setBusyLogin(null);
     }
   }
 
@@ -135,11 +152,11 @@ export function Admin() {
       // Refresh /api/me so the updated values land in the AllowedRepo
       // context everywhere (UserMenu, repo switcher, etc.).
       await refreshMe();
-      setSettingsSavedAt(Date.now());
+      if (mounted.current) setSettingsSavedAt(Date.now());
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
+      if (mounted.current) setSettingsError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSettingsBusy(false);
+      if (mounted.current) setSettingsBusy(false);
     }
   }
 
@@ -160,7 +177,7 @@ export function Admin() {
           When enabled, atlas keeps your unread queue topped up by analysing
           recent commits on this repo and proposing new lessons on a schedule.
           Generation runs server-side; you only see it as fresh items in
-          “Next up”.
+          Learn.
         </p>
         <form onSubmit={handleSaveSettings} className="admin-autogen-form">
           <label className="admin-autogen-toggle">
@@ -212,9 +229,9 @@ export function Admin() {
             {settingsBusy ? 'Saving…' : 'Save settings'}
           </button>
         </form>
-        {settingsError && <p className="error">{settingsError}</p>}
+        {settingsError && <p className="error" role="alert">{settingsError}</p>}
         {settingsSavedAt && !settingsError && !settingsDirty && (
-          <p className="muted">Saved.</p>
+          <p className="muted" role="status">Saved.</p>
         )}
         {lastRunAt && (
           <p className="muted">
@@ -235,24 +252,30 @@ export function Admin() {
             onChange={(e) => setInviteLogin(e.target.value)}
             autoComplete="off"
             spellCheck={false}
-            disabled={inviteBusy}
+            disabled={inviteBusy || busyLogin !== null}
             maxLength={39}
           />
           <button
             type="submit"
             className="btn-primary"
-            disabled={inviteBusy || !inviteLogin.trim()}
+            disabled={inviteBusy || busyLogin !== null || !inviteLogin.trim()}
           >
             {inviteBusy ? 'Inviting…' : 'Invite'}
           </button>
         </form>
-        {inviteError && <p className="error">{inviteError}</p>}
+        {inviteError && <p className="error" role="alert">{inviteError}</p>}
       </section>
 
       <section className="admin-shares">
         <h3>Active shares ({active.length})</h3>
-        {loadError && <p className="error">Failed to load: {loadError}</p>}
-        {shares === null && !loadError && <p className="muted">Loading…</p>}
+        {loadError && (
+          <div>
+            <p className="error" role="alert">Failed to load collaborators: {loadError}</p>
+            <button type="button" className="btn-secondary" onClick={() => void refresh()}>Retry collaborators</button>
+          </div>
+        )}
+        {revokeError && <p className="error" role="alert">{revokeError}</p>}
+        {shares === null && !loadError && <p className="muted" role="status">Loading…</p>}
         {shares !== null && active.length === 0 && (
           <p className="muted">No collaborators yet — only you have access.</p>
         )}
@@ -273,7 +296,7 @@ export function Admin() {
                 <button
                   className="btn-secondary"
                   onClick={() => void handleRevoke(s.githubLogin)}
-                  disabled={busyLogin === s.githubLogin}
+                  disabled={inviteBusy || busyLogin !== null}
                 >
                   {busyLogin === s.githubLogin ? 'Revoking…' : 'Revoke'}
                 </button>

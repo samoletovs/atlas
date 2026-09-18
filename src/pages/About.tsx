@@ -16,8 +16,9 @@ export function About() {
       </p>
       <p className="muted">
         Sign in with GitHub, hit <strong>+ Add repo</strong> in the profile menu, and
-        paste a repo URL. atlas writes a short starter lesson within seconds and keeps
-        topping up your unread queue from there.
+        paste a repo URL. Atlas queues a starter lesson; it is not ready to read yet.
+        The repository owner can generate it from Learn. To keep adding lessons on a
+        schedule, opt in to autonomous generation in <strong>Admin</strong>.
       </p>
       <h3>What's live today</h3>
       <ul>

@@ -35,6 +35,7 @@ import {
   fetchRepoMetadata,
 } from '../shared/github.js';
 import { decryptSecret } from '../shared/crypto.js';
+import { AmbiguousRepoError, findRepoById } from '../shared/repos.js';
 
 function slugify(s: string): string {
   return s
@@ -75,14 +76,16 @@ export async function addRepo(
   const { owner: ghOwner, repo: ghRepo } = parsed;
   const repoId = `${ghOwner}__${ghRepo}`;
 
-  // Reject duplicates regardless of who owns them — pick a different name first.
+  // The GitHub owner is not necessarily the Atlas owner/partition.
   const reposRef = reposContainer();
   let existing: Repo | undefined;
   try {
-    const { resource } = await reposRef.item(repoId, ghOwner).read<Repo>();
-    existing = resource ?? undefined;
-  } catch (e: unknown) {
-    if (e instanceof Error && (e as { code?: number }).code !== 404) throw e;
+    existing = await findRepoById(repoId);
+  } catch (error) {
+    if (error instanceof AmbiguousRepoError) {
+      return { status: 409, jsonBody: { error: error.message } };
+    }
+    throw error;
   }
 
   // If the repo already exists in atlas:

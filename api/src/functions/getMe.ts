@@ -12,8 +12,7 @@
  * Each entry includes a `role` field so the client can hide owner-only UI.
  *
  * If the user is signed in but has access to nothing, we still return the
- * user doc with an empty `allowedRepos` — the client renders the Forbidden
- * screen in that case.
+ * user doc with an empty `allowedRepos` — the client offers repository setup.
  */
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import {
@@ -27,6 +26,7 @@ import {
 } from '../shared/cosmos.js';
 import { getPrincipal, isAuthenticated, AtlasRole } from '../shared/auth.js';
 import { getQuotaState, QuotaState } from '../shared/quota.js';
+import { AmbiguousRepoError, findRepoById } from '../shared/repos.js';
 
 interface AllowedRepoEntry {
   repoId: string;
@@ -140,17 +140,21 @@ export async function getMe(
 
   // Resolve each share row to its repo doc.
   const sharedRepos: Array<{ repo: Repo; role: AtlasRole }> = [];
-  for (const share of shareRows) {
-    const ownerLogin = share.repoId.split('__', 2)[0];
-    try {
-      const { resource } = await repos.item(share.repoId, ownerLogin).read<Repo>();
-      if (resource) {
-        sharedRepos.push({ repo: resource, role: 'member' });
-      }
-    } catch (e: unknown) {
-      if (e instanceof Error && (e as { code?: number }).code === 404) continue;
-      throw e;
+  try {
+    for (const repo of ownedRepos) {
+      await findRepoById(repo.repoId);
     }
+    const ownedIds = new Set(ownedRepos.map(repo => repo.repoId));
+    for (const share of shareRows) {
+      if (ownedIds.has(share.repoId)) continue;
+      const repo = await findRepoById(share.repoId);
+      if (repo) sharedRepos.push({ repo, role: 'member' });
+    }
+  } catch (error) {
+    if (error instanceof AmbiguousRepoError) {
+      return { status: 409, jsonBody: { error: error.message } };
+    }
+    throw error;
   }
 
   const allowedRepos: AllowedRepoEntry[] = [

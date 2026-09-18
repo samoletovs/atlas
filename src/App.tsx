@@ -287,12 +287,14 @@ function ForbiddenScreen({ login }: { login: string }) {
 
 type AppState =
   | { kind: 'loading' }
+  | { kind: 'error'; message: string }
   | { kind: 'anonymous' }
   | { kind: 'forbidden'; login: string }
   | { kind: 'ready'; principal: ClientPrincipal; me: AtlasMe };
 
 export function App() {
   const [state, setState] = useState<AppState>({ kind: 'loading' });
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
   const [lang, setLangState] = useState<Lang>(readSavedLang);
   const [theme, setThemeState] = useState<Theme>(readSavedTheme);
   const [repoId, setRepoId] = useState<string>(() => {
@@ -341,25 +343,29 @@ export function App() {
   const refreshMe = useCallback(async () => {
     const version = ++meRefreshVersion.current;
     const me = await fetchMe();
-    if (!me) return null;
-    if (version === meRefreshVersion.current) {
-      setState((prev) =>
-        prev.kind === 'ready' ? { ...prev, me } : prev,
-      );
-    }
+    if (!me || version !== meRefreshVersion.current) return null;
+    setRepoId(current =>
+      me.allowedRepos.some(repo => repo.repoId === current)
+        ? current
+        : me.allowedRepos[0]?.repoId ?? '',
+    );
+    setState((prev) =>
+      prev.kind === 'ready' ? { ...prev, me } : prev,
+    );
     return me;
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    setState({ kind: 'loading' });
     (async () => {
-      const principal = await fetchUser();
-      if (cancelled) return;
-      if (!principal) {
-        setState({ kind: 'anonymous' });
-        return;
-      }
       try {
+        const principal = await fetchUser();
+        if (cancelled) return;
+        if (!principal) {
+          setState({ kind: 'anonymous' });
+          return;
+        }
         const me = await fetchMe();
         if (cancelled) return;
         if (!me) {
@@ -392,16 +398,19 @@ export function App() {
         }
         setState({ kind: 'ready', principal, me });
       } catch (err) {
-        console.error('fetchMe failed', err);
-        setState({ kind: 'forbidden', login: principal.userDetails || 'unknown' });
+        if (cancelled) return;
+        setState({
+          kind: 'error',
+          message: `Could not load your account. Check your connection and try again. ${err instanceof Error ? err.message : ''}`,
+        });
       }
     })();
     return () => {
       cancelled = true;
     };
-    // We deliberately ignore repoId/theme/lang here; this effect runs once at mount.
+    // Local choices are read only when bootstrapping, not when they change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bootstrapAttempt]);
 
   useEffect(() => {
     localStorage.setItem('atlas-lang', lang);
@@ -412,7 +421,19 @@ export function App() {
   }, [repoId]);
 
   if (state.kind === 'loading') {
-    return <div className="loading">Loading…</div>;
+    return <div className="loading" role="status">Loading…</div>;
+  }
+
+  if (state.kind === 'error') {
+    return (
+      <div className="signin">
+        <h1>atlas</h1>
+        <p className="error" role="alert">{state.message}</p>
+        <button type="button" className="btn-primary" onClick={() => setBootstrapAttempt(attempt => attempt + 1)}>
+          Try again
+        </button>
+      </div>
+    );
   }
 
   if (state.kind === 'anonymous') {
@@ -529,7 +550,7 @@ function AuthenticatedShell({
                 <Route path="/for-you" element={<Navigate to={{ pathname: '/', search: location.search, hash: location.hash }} replace />} />
                 <Route path="/atlas" element={hasAnyRepo ? <TopicAtlas /> : <NoRepoLanding />} />
                 <Route path="/lesson/:id" element={<LessonReader />} />
-                <Route path="/admin" element={<Admin />} />
+                <Route path="/admin" element={<Admin key={repoId} />} />
                 <Route path="/repos/new" element={<AddRepo />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/about" element={<About />} />
