@@ -282,6 +282,13 @@ test('About explains queued content, owner generation and opt-in scheduling', as
   await expect(page.getByRole('main')).toContainText(/opt in.*Admin/i);
 });
 
+test('About distinguishes cached fallback from authenticated offline startup', async ({ page }) => {
+  await mock(page);
+  await page.goto('/about');
+  await expect(page.getByRole('main')).toContainText(/cached-lesson fallback during network failures/i, { timeout: 3000 });
+  await expect(page.getByRole('main')).toContainText(/starting the app or signing in still needs a network connection/i);
+});
+
 test('member Admin navigation redirects without requesting shares', async ({ page }) => {
   const state = await mock(page, async (route, url) => {
     if (url.pathname !== '/api/me') return false;

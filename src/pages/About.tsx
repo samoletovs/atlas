@@ -30,7 +30,10 @@ export function About() {
           atlas reads recent commits and tops up your unread queue every
           4 / 8 / 12 / 24 hours
         </li>
-        <li>PWA reader with offline caching</li>
+        <li>
+          PWA reader with cached-lesson fallback during network failures. Starting
+          the app or signing in still needs a network connection to load your account.
+        </li>
         <li>
           <strong>Topic atlas</strong> — a graph view of every topic atlas has covered
           for this repo, with edges between topics that suggest each other
