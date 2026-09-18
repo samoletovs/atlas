@@ -11,6 +11,7 @@
 
 .reader--study .reader-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -19,7 +20,9 @@
 
 .reader--study .back {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
+  max-width: 100%;
   min-height: 44px;
   padding: 0.5rem 0;
   color: var(--fg-muted);
@@ -384,7 +387,7 @@
 }
 
 .reader--study .reader-actions .btn-primary {
-  min-width: 10rem;
+  min-width: min(10rem, 100%);
   min-height: 48px;
 }
 

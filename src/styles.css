@@ -774,7 +774,7 @@ main:focus { outline: none; }
 }
 .error-inline {
   font-size: 0.82rem;
-  color: #c44;
+  color: var(--error);
   margin: 0.3rem 0 0;
 }
 .spinner {
@@ -1261,15 +1261,15 @@ main:focus { outline: none; }
 }
 
 @media (max-width: 600px) {
-  .topbar { column-gap: 0.5rem; }
-  .topbar nav { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; font-size: 0.875rem; }
-  .topbar nav a { padding: 0.4rem 0.1rem; }
+  .topbar { display: flex; flex-wrap: wrap; column-gap: 0.5rem; }
+  .topbar nav { order: 2; flex: 1 0 100%; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 0.875rem; }
+  .topbar nav a { flex: 1 1 auto; padding: 0.4rem 0.1rem; }
   .brand-name { gap: 0.4rem; font-size: 1.4rem; }
   .brand-mark { width: 24px; height: 24px; padding: 4px; }
-  .brand { gap: 0.3rem; }
-  .brand-repo { font-size: 0.8rem; max-width: 135px; }
-  .brand-sep { font-size: 0.85rem; }
-  .topbar-right { gap: 0.35rem; }
+  .brand { flex: 1 1 12rem; flex-wrap: wrap; gap: 0.3rem; }
+  .brand-repo { font-size: 0.8rem; flex: 1 1 7rem; min-width: min(7rem, 100%); max-width: min(12rem, 100%); }
+  .brand-sep { display: none; }
+  .topbar-right { order: 1; flex: 1 1 auto; justify-content: space-between; gap: 0.35rem; }
   .user-menu-trigger { max-width: 90px; padding-inline: 0.45rem; font-size: 0.8rem; }
   .quota-badge { font-size: 0.75rem; padding-inline: 0.4rem; }
   main { padding-top: 1.25rem; }
@@ -1637,6 +1637,13 @@ main:focus { outline: none; }
 }
 .topic-atlas-list-item li,
 .topic-atlas-list-item .btn-link { min-width: 0; overflow-wrap: anywhere; }
+.topic-atlas-list-item .btn-link,
+.topic-atlas-detail .btn-link {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
 .topic-create { margin-top: 1.25rem; }
 .topic-create > summary { display: inline-flex; align-items: center; min-height: 44px; color: var(--link); cursor: pointer; }
 .topic-create > summary::before { content: "+"; margin-right: 0.6rem; font-size: 1.25rem; }

@@ -42,6 +42,8 @@ contract; the PWA cache covers both. Lesson and recommendation requests prefer
 fresh network responses so confirmed progress is not replaced by an older
 snapshot. Previously cached responses remain available on network failure;
 explicit HTTP errors are surfaced rather than replaced by cached success.
+This fallback supports previously fetched content in an open session; account
+verification and a fresh authenticated startup still require connectivity.
 `npm run build && npm run test:pwa` checks the generated service worker in a
 real browser against a local synthetic server, including offline fallback and
 auth/account exclusions.
