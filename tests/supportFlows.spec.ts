@@ -1,5 +1,5 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
-import type { AllowedRepo, AtlasMe, GithubRepoListItem, RepoShare } from '../src/lib/api';
+import type { AllowedRepo, AtlasMe, GithubRepoListItem, Lesson, RepoShare } from '../src/lib/api';
 
 const baseURL = process.env.ATLAS_LOCAL_BASE_URL ?? 'http://127.0.0.1:43127';
 const origin = new URL(baseURL);
@@ -253,8 +253,8 @@ test('accepted account refresh reconciles repository label, role and request con
   await expect(page.locator('.brand-repo')).toHaveText('Beta');
   await openMenuPage(page, 'Admin');
   await expect(page.getByRole('heading', { name: 'Admin · Beta' })).toBeVisible();
-  const lastShares = state.requests.filter(url => url.pathname === '/api/shares').at(-1);
-  expect(lastShares?.searchParams.get('repoId')).toBe(repos[1].repoId);
+  await expect.poll(() => state.requests.filter(url => url.pathname === '/api/shares')
+    .at(-1)?.searchParams.get('repoId')).toBe(repos[1].repoId);
 });
 
 test('repository modes use ordinary keyboard-operable pressed buttons', async ({ page }) => {
@@ -398,4 +398,235 @@ test('empty account context stays in onboarding and can open repository setup', 
   await expect(page.getByRole('heading', { name: 'Welcome to atlas' })).toBeVisible();
   await page.getByRole('link', { name: '+ Add a public repo', exact: true }).click();
   await expect(page.getByRole('textbox', { name: /^GitHub repo URL/ })).toBeVisible();
+});
+
+for (const scenario of [
+  { requests: 2, latestStatus: 200 },
+  { requests: 3, latestStatus: 200 },
+  { requests: 2, latestStatus: 503 },
+  { requests: 2, latestStatus: 401 },
+]) {
+  test(`account refresh coalesces ${scenario.requests} requests from generation and addition, latest ${scenario.latestStatus}`, async ({ page }) => {
+    const jobs = Array.from({ length: scenario.requests - 1 }, (_, index) => ({
+      entered: latch(), release: latch(),
+      lesson: {
+        id: `queued-${index}`, repoId: repos[0].repoId, ownerId: 'reader', title: `Synthetic queued lesson ${index}`,
+        topic: `synthetic-${index}`, depth: 'intro', read_minutes: 4, body: '', citations: [], suggested_next: [],
+        status: 'queued', language: 'en', created_at: '2026-01-01',
+      } satisfies Lesson,
+    }));
+    const account = Array.from({ length: scenario.requests }, () => ({ entered: latch(), release: latch(), finished: latch() }));
+    const authoritative: AtlasMe = {
+      ...me, allowedRepos: [...repos, newRepo],
+      quota: { used: scenario.requests, limit: 5, remaining: 5 - scenario.requests, resetAt: '2099-01-01' },
+    };
+    let added = false;
+    let posts = 0;
+    let refreshes = 0;
+    const state = await mock(page, async (route, url) => {
+      if (url.pathname === '/api/lessons' && url.searchParams.get('status') === 'queued') {
+        await json(route, { lessons: added ? [] : jobs.map(job => job.lesson) });
+        return true;
+      }
+      if (url.pathname === '/api/lessons/generate') {
+        const body = route.request().postDataJSON() as { topic: string };
+        const job = jobs.find(candidate => candidate.lesson.topic === body.topic);
+        if (!job) throw new Error('Unexpected synthetic generation');
+        job.entered.resolve();
+        await job.release.promise;
+        await json(route, { ...job.lesson, status: 'published', body: 'Synthetic generated lesson.' });
+        return true;
+      }
+      if (url.pathname === '/api/repos') {
+        posts++;
+        added = true;
+        await json(route, { repo: newRepo, starterLesson: null }, 201);
+        return true;
+      }
+      if (url.pathname === '/api/me' && added) {
+        const index = refreshes++;
+        const hold = account[index];
+        if (!hold) {
+          await json(route, authoritative);
+          return true;
+        }
+        hold.entered.resolve();
+        await hold.release.promise;
+        const latest = index === account.length - 1;
+        if (latest) {
+          await json(route, scenario.latestStatus === 200 ? authoritative : { error: 'Synthetic authoritative failure' }, scenario.latestStatus);
+        } else {
+          await json(route, me, index === 1 ? 502 : 200);
+        }
+        hold.finished.resolve();
+        return true;
+      }
+      return false;
+    });
+    try {
+      await page.goto('/');
+      for (const job of jobs) {
+        await page.locator('.learn-queued-row').filter({ has: page.getByRole('heading', { name: job.lesson.title, exact: true }) })
+          .getByRole('button', { name: 'Generate lesson', exact: true }).click();
+        await job.entered.promise;
+      }
+      await openMenuPage(page, '+ Add repo');
+      await page.getByRole('checkbox').check();
+      await page.getByRole('button', { name: 'Add 1 repo', exact: true }).click();
+      await account[0].entered.promise;
+      for (const [index, job] of jobs.entries()) {
+        job.release.resolve();
+        await account[index + 1].entered.promise;
+      }
+      account.at(-1)!.release.resolve();
+      await account.at(-1)!.finished.promise;
+      if (scenario.latestStatus === 200) {
+        // A stalled superseded request must not hold the successful caller hostage.
+        await expect(page).toHaveURL(`${baseURL}/`, { timeout: 3000 });
+      } else {
+        await expect(page.getByRole('alert')).toContainText(
+          scenario.latestStatus === 401 ? 'updated repository list is not available' : 'fetchMe failed: 503',
+          { timeout: 3000 },
+        );
+        await page.getByRole('button', { name: 'Retry account refresh', exact: true }).click();
+        await expect(page).toHaveURL(`${baseURL}/`);
+      }
+      await expect(page.getByRole('combobox', { name: 'Switch repo' })).toHaveValue(newRepo.repoId);
+      await expect(page.locator('.quota-badge')).toHaveText(`${scenario.requests}/5`);
+      const staleResponses = page.waitForResponse(response =>
+        new URL(response.url()).pathname === '/api/me' && response.status() === 200);
+      account[0].release.resolve();
+      await (await staleResponses).finished();
+      for (const hold of account.slice(1, -1)) hold.release.resolve();
+      await Promise.all(account.map(hold => hold.finished.promise));
+      await flushRender(page);
+      await expect(page.getByRole('combobox', { name: 'Switch repo' })).toHaveValue(newRepo.repoId);
+      await expect(page.locator('.quota-badge')).toHaveText(`${scenario.requests}/5`);
+      expect(refreshes).toBe(scenario.requests + (scenario.latestStatus === 200 ? 0 : 1));
+      expect(posts).toBe(1);
+      expect(state.errors).toEqual([]);
+    } finally {
+      jobs.forEach(job => job.release.resolve());
+      account.forEach(hold => hold.release.resolve());
+    }
+  });
+}
+
+for (const mode of ['url', 'browse']) {
+  for (const firstRepo of [true, false]) {
+    test(`committed ${mode} addition after navigation refreshes ${firstRepo ? 'first-repo onboarding' : 'the preserved current repo'}`, async ({ page }) => {
+      const entered = latch();
+      const release = latch();
+      const initialRepos = firstRepo ? [] : repos;
+      const posts: string[] = [];
+      let committed = false;
+      let refreshes = 0;
+      const state = await mock(page, async (route, url) => {
+        if (url.pathname === '/api/me') {
+          if (committed) refreshes++;
+          await json(route, { ...me, allowedRepos: committed ? [...initialRepos, newRepo] : initialRepos });
+          return true;
+        }
+        if (url.pathname === '/api/github/repos') {
+          await json(route, { repos: [browseRepo, { ...browseRepo, repo: 'second', fullName: 'reader/second', htmlUrl: 'https://github.com/reader/second' }] });
+          return true;
+        }
+        if (url.pathname === '/api/repos') {
+          posts.push((route.request().postDataJSON() as { githubUrl: string }).githubUrl);
+          entered.resolve();
+          await release.promise;
+          committed = true;
+          await json(route, { repo: newRepo, starterLesson: null }, 201);
+          return true;
+        }
+        return false;
+      });
+      try {
+        await page.goto('/repos/new');
+        await expect(page.getByRole('checkbox')).toHaveCount(2);
+        if (mode === 'url') {
+          await page.getByRole('button', { name: 'Paste URL', exact: true }).click();
+          await page.getByRole('textbox', { name: /^GitHub repo URL/ }).fill(browseRepo.htmlUrl);
+          await page.getByRole('button', { name: 'Add repo', exact: true }).click();
+        } else {
+          await page.getByRole('checkbox').nth(0).check();
+          await page.getByRole('checkbox').nth(1).check();
+          await page.getByRole('button', { name: 'Add 2 repos', exact: true }).click();
+        }
+        await entered.promise;
+        await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Learn', exact: true }).click();
+        if (firstRepo) {
+          await expect(page.getByRole('heading', { name: 'Welcome to atlas' })).toBeVisible();
+        } else {
+          await page.getByRole('combobox', { name: 'Switch repo' }).selectOption(repos[1].repoId);
+        }
+        release.resolve();
+        await expect.poll(() => refreshes, { timeout: 3000 }).toBe(1);
+        if (firstRepo) {
+          await expect(page.locator('.brand-repo')).toHaveText(newRepo.name);
+          await expect(page.getByRole('heading', { name: 'Welcome to atlas' })).toHaveCount(0);
+        } else {
+          await expect(page.getByRole('combobox', { name: 'Switch repo' })).toHaveValue(repos[1].repoId);
+          await expect(page.getByRole('combobox', { name: 'Switch repo' }).locator('option', { hasText: newRepo.name })).toHaveCount(1);
+        }
+        await expect(page).toHaveURL(`${baseURL}/`);
+        await flushRender(page);
+        expect(posts).toEqual([browseRepo.htmlUrl]);
+        expect(state.errors).toEqual([]);
+      } finally {
+        release.resolve();
+      }
+    });
+  }
+}
+
+test('departed batch refreshes an earlier committed success when the pending addition fails', async ({ page }) => {
+  const entered = latch();
+  const release = latch();
+  const posts: string[] = [];
+  let committed = false;
+  let refreshes = 0;
+  await mock(page, async (route, url) => {
+    if (url.pathname === '/api/me') {
+      if (committed) refreshes++;
+      await json(route, { ...me, allowedRepos: committed ? [...repos, newRepo] : repos });
+      return true;
+    }
+    if (url.pathname === '/api/github/repos') {
+      await json(route, { repos: [browseRepo, ...['second', 'third'].map(repo => ({
+        ...browseRepo, repo, fullName: `reader/${repo}`, htmlUrl: `https://github.com/reader/${repo}`,
+      }))] });
+      return true;
+    }
+    if (url.pathname === '/api/repos') {
+      posts.push((route.request().postDataJSON() as { githubUrl: string }).githubUrl);
+      if (posts.length === 1) {
+        committed = true;
+        await json(route, { repo: newRepo, starterLesson: null }, 201);
+      } else {
+        entered.resolve();
+        await release.promise;
+        await json(route, { error: 'Synthetic failed addition' }, 502);
+      }
+      return true;
+    }
+    return false;
+  });
+  try {
+    await page.goto('/repos/new');
+    await expect(page.getByRole('checkbox')).toHaveCount(3);
+    for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check();
+    await page.getByRole('button', { name: 'Add 3 repos', exact: true }).click();
+    await entered.promise;
+    await openMenuPage(page, 'About');
+    release.resolve();
+    await expect.poll(() => refreshes, { timeout: 3000 }).toBe(1);
+    await expect(page.getByRole('combobox', { name: 'Switch repo' }).locator('option', { hasText: newRepo.name })).toHaveCount(1);
+    await expect(page).toHaveURL(`${baseURL}/about`);
+    await expect(page.getByRole('combobox', { name: 'Switch repo' })).toHaveValue(repos[0].repoId);
+    await flushRender(page);
+    expect(posts).toEqual([browseRepo.htmlUrl, 'https://github.com/reader/second']);
+  } finally {
+    release.resolve();
+  }
 });

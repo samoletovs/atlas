@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   addRepo as addRepoApi,
@@ -42,7 +42,7 @@ export function AddRepo() {
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const mounted = useRef(true);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
@@ -111,23 +111,29 @@ export function AddRepo() {
   }
 
   async function refreshAddedRepos(added: AddedRepos) {
-    setBusy(true);
-    setRefreshError(null);
+    if (mounted.current) {
+      setBusy(true);
+      setRefreshError(null);
+    }
     try {
       const me = await refreshMe();
-      if (!mounted.current) return;
       const lastRepoId = added.repoIds.at(-1);
       if (!me || !lastRepoId || !me.allowedRepos.some(repo => repo.repoId === lastRepoId)) {
         throw new Error('The updated repository list is not available yet.');
       }
+      if (!mounted.current) return;
       setRepoId(lastRepoId);
       setPendingAddition(null);
       if (added.failures.length === 0) navigate('/');
       else setBrowseError(`${added.repoIds.length} added. Could not add: ${added.failures.join('; ')}`);
     } catch (err) {
-      if (mounted.current) setRefreshError(
-        `Repositories added, but account details could not refresh. Retry without adding them again. ${err instanceof Error ? err.message : String(err)}`,
-      );
+      if (mounted.current) {
+        setRefreshError(
+          `Repositories added, but account details could not refresh. Retry without adding them again. ${err instanceof Error ? err.message : String(err)}`,
+        );
+      } else {
+        console.warn('Added repositories could not refresh account after navigation', err);
+      }
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -142,6 +148,7 @@ export function AddRepo() {
     const succeededKeys = new Set<string>();
     const keys = [...selected];
     for (const [index, key] of keys.entries()) {
+      if (!mounted.current) break;
       setProgress(`Adding ${index + 1} of ${keys.length}…`);
       const repoEntry = repos?.find(repo => `${repo.owner}/${repo.repo}` === key);
       try {
@@ -152,16 +159,19 @@ export function AddRepo() {
         added.failures.push(`${key}: ${err instanceof Error ? err.message : String(err)}`);
         failedKeys.add(key);
       }
-      if (!mounted.current) return;
     }
-    setProgress(null);
-    setSelected(failedKeys);
-    setRepos(current => current?.map(repo => succeededKeys.has(`${repo.owner}/${repo.repo}`)
-      ? { ...repo, inAtlas: true, ownedByOther: false } : repo) ?? null);
+    if (mounted.current) {
+      setProgress(null);
+      setSelected(failedKeys);
+      setRepos(current => current?.map(repo => succeededKeys.has(`${repo.owner}/${repo.repo}`)
+        ? { ...repo, inAtlas: true, ownedByOther: false } : repo) ?? null);
+    } else if (added.failures.length > 0) {
+      console.warn('Some repository additions failed after navigation', added.failures);
+    }
     if (added.repoIds.length > 0) {
-      setPendingAddition(added);
+      if (mounted.current) setPendingAddition(added);
       await refreshAddedRepos(added);
-    } else {
+    } else if (mounted.current) {
       setBrowseError(`Could not add: ${added.failures.join('; ')}`);
       setBusy(false);
     }
@@ -179,12 +189,12 @@ export function AddRepo() {
     setBusy(true);
     try {
       const result = await addRepoApi(trimmed);
-      if (!mounted.current) return;
       const added: AddedRepos = { repoIds: [result.repo.repoId], failures: [] };
-      setPendingAddition(added);
+      if (mounted.current) setPendingAddition(added);
       await refreshAddedRepos(added);
     } catch (err) {
       if (mounted.current) setUrlError(err instanceof Error ? err.message : String(err));
+      else console.warn('Repository addition failed after navigation', err);
     } finally {
       if (mounted.current) setBusy(false);
     }

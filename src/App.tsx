@@ -79,6 +79,11 @@ interface MeContextValue {
   quota: AtlasQuota;
   refreshMe: () => Promise<AtlasMe | null>;
 }
+interface PendingMeRefresh {
+  promise: Promise<AtlasMe | null>;
+  resolve: (me: AtlasMe | null) => void;
+  reject: (error: unknown) => void;
+}
 const MeContext = createContext<MeContextValue>({
   quota: { used: 0, limit: null, remaining: null, resetAt: '' },
   refreshMe: async () => null,
@@ -305,6 +310,7 @@ export function App() {
   // so we don't PATCH on every render — only when the user actually toggles.
   const serverPrefsRef = useRef<{ theme?: Theme; lang?: Lang }>({});
   const meRefreshVersion = useRef(0);
+  const pendingMeRefresh = useRef<PendingMeRefresh | null>(null);
 
   const setLang = useCallback((next: Lang) => {
     setLangState(next);
@@ -340,19 +346,42 @@ export function App() {
     localStorage.setItem('atlas-theme', theme);
   }, [theme]);
 
-  const refreshMe = useCallback(async () => {
+  const refreshMe = useCallback(() => {
+    if (!pendingMeRefresh.current) {
+      let resolve!: PendingMeRefresh['resolve'];
+      let reject!: PendingMeRefresh['reject'];
+      const promise = new Promise<AtlasMe | null>((onResolve, onReject) => {
+        resolve = onResolve;
+        reject = onReject;
+      });
+      pendingMeRefresh.current = { promise, resolve, reject };
+    }
+    const pending = pendingMeRefresh.current;
     const version = ++meRefreshVersion.current;
-    const me = await fetchMe();
-    if (!me || version !== meRefreshVersion.current) return null;
-    setRepoId(current =>
-      me.allowedRepos.some(repo => repo.repoId === current)
-        ? current
-        : me.allowedRepos[0]?.repoId ?? '',
-    );
-    setState((prev) =>
-      prev.kind === 'ready' ? { ...prev, me } : prev,
-    );
-    return me;
+    // Overlapping callers share the newest result, not a superseded request's
+    // failure or a fabricated signed-out result. Older fetches cannot block them.
+    void (async () => {
+      try {
+        const me = await fetchMe();
+        if (version !== meRefreshVersion.current) return;
+        if (me) {
+          setRepoId(current =>
+            me.allowedRepos.some(repo => repo.repoId === current)
+              ? current
+              : me.allowedRepos[0]?.repoId ?? '',
+          );
+          setState(prev =>
+            prev.kind === 'ready' ? { ...prev, me } : prev,
+          );
+        }
+        pending.resolve(me);
+      } catch (error) {
+        if (version === meRefreshVersion.current) pending.reject(error);
+      } finally {
+        if (version === meRefreshVersion.current) pendingMeRefresh.current = null;
+      }
+    })();
+    return pending.promise;
   }, []);
 
   useEffect(() => {
