@@ -38,7 +38,13 @@ Recommendations use `GET /api/recommendations`, outside the parameterized
 `/api/lessons/{id}` namespace. The previous `/api/lessons/recommended` URL remains
 compatible through explicit dispatch, so cached clients cannot mistake it for a
 lesson id. Both URLs retain the same authorization and recommendation response
-contract; the PWA cache covers both.
+contract; the PWA cache covers both. Lesson and recommendation requests prefer
+fresh network responses so confirmed progress is not replaced by an older
+snapshot. Previously cached responses remain available on network failure;
+explicit HTTP errors are surfaced rather than replaced by cached success.
+`npm run build && npm run test:pwa` checks the generated service worker in a
+real browser against a local synthetic server, including offline fallback and
+auth/account exclusions.
 
 ## Stack
 
