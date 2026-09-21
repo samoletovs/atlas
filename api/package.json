@@ -15,7 +15,7 @@
     "@azure/cosmos": "^4.10.0",
     "@azure/functions": "^4.16.2",
     "@azure/identity": "^4.13.2",
-    "openai": "^7.13.0"
+    "openai": "^7.15.0"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",
