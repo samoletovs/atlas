@@ -41,7 +41,11 @@ load_dotenv(ATLAS_DIR / ".env")
 COSMOS_ENDPOINT = os.environ["COSMOS_ENDPOINT"]
 COSMOS_DATABASE = os.environ.get("COSMOS_DATABASE", "atlas")
 FOUNDRY_PROJECT_ENDPOINT = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
-FOUNDRY_DEPLOYMENT = os.environ.get("FOUNDRY_DEPLOYMENT", "gpt-4o-mini")
+FOUNDRY_DEPLOYMENT = (
+    os.environ.get("FOUNDRY_AGENT_DEPLOYMENT")
+    or os.environ.get("FOUNDRY_DEPLOYMENT")
+    or "gpt-4o-mini"
+)
 USER_ID = os.environ.get("ATLAS_USER_ID", "sam")  # legacy v1 schema (seed/enhance modes)
 OWNER_LOGIN = os.environ.get("ATLAS_OWNER_LOGIN", "samoletovs")  # v2 schema (pending mode)
 
@@ -224,6 +228,12 @@ Output ONLY the JSON. No prose. No markdown fences. Plain JSON.
 
 
 def make_agents_client() -> AgentsClient:
+    if FOUNDRY_DEPLOYMENT not in {"gpt-4o-mini", "gpt-4.1"}:
+        raise ValueError(
+            "Classic atlas agents remain on gpt-4o-mini/gpt-4.1: GPT-6 reasoning "
+            "controls and model support need a separate promotion gate. "
+            "Set FOUNDRY_AGENT_DEPLOYMENT; the API's selective Sol path is independent."
+        )
     return AgentsClient(
         endpoint=FOUNDRY_PROJECT_ENDPOINT,
         credential=DefaultAzureCredential(),

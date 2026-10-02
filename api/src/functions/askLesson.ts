@@ -15,8 +15,8 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse } from '../shared/auth.js';
 import { consumeAskTurn } from '../shared/quota.js';
-import { checkBudget, recordEstimatedCost } from '../shared/budget.js';
-import { getOpenAIClientForUser } from '../shared/openaiClient.js';
+import { BudgetReservationError, checkBudget, recordEstimatedCost } from '../shared/budget.js';
+import { completionOptions, estimateInputTokens, getOpenAIClientForUser, TextMessage } from '../shared/openaiClient.js';
 
 interface ChatTurn {
   role: 'user' | 'assistant';
@@ -78,21 +78,6 @@ export async function askLesson(
 
   const id = req.params.id;
   if (!id) return { status: 400, jsonBody: { error: 'Missing lesson id' } };
-
-  // Per-user soft rate limit on follow-up chat turns. Atomically bumps a
-  // counter on the user doc so a runaway client can't drain tokens.
-  const quota = await consumeAskTurn(userId);
-  if (quota.exceeded) {
-    return {
-      status: 429,
-      jsonBody: {
-        error: `Daily chat cap reached (${quota.used}/${quota.limit}). Resets at ${quota.resetAt}.`,
-        used: quota.used,
-        limit: quota.limit,
-        resetAt: quota.resetAt,
-      },
-    };
-  }
 
   // Global per-instance daily $ cap. Defense-in-depth on top of per-user quota.
   const bg = checkBudget();
@@ -169,19 +154,36 @@ export async function askLesson(
     };
   }
 
-  const { client, deployment } = await getOpenAIClientForUser(userId);
-  recordEstimatedCost(deployment, MAX_ANSWER_TOKENS);
   try {
+    const { client, deployment, model } = await getOpenAIClientForUser(userId);
+    const messages: TextMessage[] = [
+      { role: 'system', content: buildSystemPrompt(lesson) },
+      ...history.map((t) => ({ role: t.role, content: t.content })),
+      { role: 'user', content: question },
+    ];
+    const inputTokens = estimateInputTokens(messages, 'routine');
+    const quota = await consumeAskTurn(userId);
+    if (quota.exceeded) {
+      return {
+        status: 429,
+        jsonBody: {
+          error: `Daily chat cap reached (${quota.used}/${quota.limit}). Resets at ${quota.resetAt}.`,
+          used: quota.used,
+          limit: quota.limit,
+          resetAt: quota.resetAt,
+        },
+      };
+    }
+    await recordEstimatedCost(model, MAX_ANSWER_TOKENS, inputTokens);
     const completion = await client.chat.completions.create({
       model: deployment,
-      temperature: 0.4,
-      max_tokens: MAX_ANSWER_TOKENS,
-      messages: [
-        { role: 'system', content: buildSystemPrompt(lesson) },
-        ...history.map((t) => ({ role: t.role, content: t.content })),
-        { role: 'user', content: question },
-      ],
+      ...completionOptions(model, MAX_ANSWER_TOKENS, 0.4),
+      messages,
     });
+    const choice = completion.choices[0];
+    if (!choice || choice.finish_reason !== 'stop' || choice.message.refusal) {
+      throw new Error('Model returned incomplete or refused output');
+    }
     const answer = (completion.choices[0]?.message?.content ?? '').trim();
     if (!answer) {
       return { status: 502, jsonBody: { error: 'Model returned empty response' } };
@@ -191,7 +193,7 @@ export async function askLesson(
   } catch (err: unknown) {
     ctx.error('askLesson model call failed', err);
     const message = err instanceof Error ? err.message : String(err);
-    return { status: 502, jsonBody: { error: `Model call failed: ${message}` } };
+    return { status: err instanceof BudgetReservationError ? 429 : 502, jsonBody: { error: `Model call failed: ${message}` } };
   }
 }
 

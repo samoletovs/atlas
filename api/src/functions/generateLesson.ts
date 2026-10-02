@@ -9,8 +9,9 @@
  * Auth: SP credentials in SWA App Settings (Free tier has no MI).
  *   AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID
  *   FOUNDRY_AOAI_ENDPOINT (e.g. https://foundrylab-aiservices.cognitiveservices.azure.com)
- *   FOUNDRY_DEPLOYMENT (e.g. gpt-4o-mini)
- *   FOUNDRY_API_VERSION (e.g. 2024-08-01-preview)
+ *   FOUNDRY_DEPLOYMENT (routine, e.g. gpt-6-luna)
+ *   FOUNDRY_LESSON_DEPLOYMENT (deep lessons only, e.g. gpt-6-sol)
+ *   FOUNDRY_API_VERSION (e.g. 2024-10-21)
  *
  * Idempotent: if a non-archived lesson already exists for (topic, language),
  * returns the existing record without calling the model.
@@ -19,10 +20,11 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { lessonsV2Container, LessonV2 } from '../shared/cosmos.js';
 import { resolveRequest, isHttpResponse, requireOwner } from '../shared/auth.js';
 import { checkQuota } from '../shared/quota.js';
-import { checkBudget, recordEstimatedCost } from '../shared/budget.js';
-import { getOpenAIClientForUser } from '../shared/openaiClient.js';
+import { BudgetReservationError, checkBudget, recordEstimatedCost } from '../shared/budget.js';
+import { completionOptions, estimateInputTokens, getOpenAIClientForUser, TextMessage } from '../shared/openaiClient.js';
 
 const GENERATE_MAX_TOKENS = 1024;
+const DEEP_LESSON_MAX_TOKENS = 4096;
 
 interface GenerateBody {
   title?: string;
@@ -249,18 +251,24 @@ function sanitizeGeneratedLesson(payload: GeneratedLesson): GeneratedLesson {
 }
 
 async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string): Promise<GeneratedLesson> {
-  const { client, deployment } = await getOpenAIClientForUser(userId);
-  recordEstimatedCost(deployment, GENERATE_MAX_TOKENS);
+  const deep = input.depth === 'deep';
+  const { client, deployment, model } = await getOpenAIClientForUser(userId, deep ? 'deep-lesson' : 'routine');
+  const maxTokens = deep ? DEEP_LESSON_MAX_TOKENS : GENERATE_MAX_TOKENS;
+  const messages: TextMessage[] = [
+    { role: 'system', content: LIBRARIAN_INSTRUCTIONS },
+    { role: 'user', content: buildUserPrompt(input, lang) },
+  ];
+  await recordEstimatedCost(model, maxTokens, estimateInputTokens(messages, deep ? 'deep-lesson' : 'routine'));
   const completion = await client.chat.completions.create({
     model: deployment,
-    temperature: 0.4,
-    max_tokens: GENERATE_MAX_TOKENS,
+    ...completionOptions(model, maxTokens, 0.4),
     response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: LIBRARIAN_INSTRUCTIONS },
-      { role: 'user', content: buildUserPrompt(input, lang) },
-    ],
+    messages,
   });
+  const choice = completion.choices[0];
+  if (!choice || choice.finish_reason !== 'stop' || choice.message.refusal) {
+    throw new Error('Model returned incomplete or refused output');
+  }
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text) throw new Error('Model returned empty response');
   const parsed = sanitizeGeneratedLesson(parseModelJson(text));
@@ -354,7 +362,7 @@ export async function generateLesson(
   } catch (err: unknown) {
     ctx.error('generateLesson model call failed', err);
     const message = err instanceof Error ? err.message : String(err);
-    return { status: 502, jsonBody: { error: `Model call failed: ${message}` } };
+    return { status: err instanceof BudgetReservationError ? 429 : 502, jsonBody: { error: `Model call failed: ${message}` } };
   }
 
   const slug = slugify(generated.title) || slugify(topic) || 'untitled';

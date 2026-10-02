@@ -9,7 +9,9 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - **Frontend:** React 19 + Vite 8 + TypeScript, deployed to Azure Static Web Apps
 - **Backend:** Azure Functions v4 (Node 20, TypeScript)
 - **Database:** Cosmos DB (NoSQL) — containers: `lessons`, `topics`, `activity_events`
-- **Agent:** Microsoft Foundry — reuses [foundryLab](../foundryLab/) account, model `gpt-4o-mini`, temperature 0.2
+- **Models:** prepared selective pilot on `foundrylab-aiservices`: routine API
+  `gpt-6-luna`, explicitly deep lessons `gpt-6-sol` (both v2026-09-22).
+  Classic scheduled agents stay on `gpt-4o-mini` until separately verified.
 - **Auth:** GitHub OAuth via Static Web Apps built-in auth. Identity =
   GitHub handle; user docs are partitioned by `userId = login.toLowerCase()`.
   See [`docs/AUTH-GOOGLE.md`](docs/AUTH-GOOGLE.md) for the (deprecated)
@@ -42,6 +44,23 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - Foundry agent reuses foundryLab account → no new AOAI cost
 - SWA: Free tier (no custom domain initially)
 - Azure budget alert: €5/month threshold
+
+The model refresh is **not promoted**. The parent owns the combined +$10/month
+pilot and API/quality gates. Deep API lessons use Sol with low reasoning and a
+4,096 completion-token cap; other lessons use Luna/1,024 and ask-more Luna/600.
+The existing general budget and per-user quotas remain. Sol also requires a
+durable, shared reservation in the existing Cosmos `users` container before
+inference: maximum $0.10 per UTC day across all users and instances, including
+uncapped users. `ATLAS_SOL_DAILY_BUDGET_USD` can only lower/disable this pilot
+limit. Storage failures or uncertain writes block inference; reservations are
+not refunded. Reserve uncached input and full completion cost; never assume
+cache hits or guess a price for an unknown alias.
+Deployment/model pairs must agree with the approved same-named deployments;
+unverified aliases and conflicting `*_MODEL` assertions fail before inference
+or premium admission. Deep lessons retain the 24,000-byte input-reservation
+bound; routine chat uses its existing character limits, including Russian.
+See [README.md](README.md#model-pilot) for shadowing settings, rollback,
+persistent classic agents and the separate triage auth blocker.
 
 ## Skills to invoke when working here
 
