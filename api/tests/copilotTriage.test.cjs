@@ -52,7 +52,7 @@ test('Luna triage keeps the 300-token ceiling without legacy parameters', async 
   assert.deepEqual(labels, ['needs-info']);
 });
 
-for (const model of ['gpt-4.1', 'gpt-4o-mini', 'gpt-4.1-nano']) {
+for (const model of ['gpt-4.1', 'gpt-4o-mini']) {
   test(`${model} rollback retains compatible parameters`, async () => {
     const { requests } = await triage(model);
     assert.equal(requests[0].body.max_tokens, 300);
@@ -66,6 +66,8 @@ test('a truncated but parseable approval cannot assign paid work', async () => {
   assert.deepEqual((await triage('gpt-6-luna', 'length')).labels, ['needs-review']);
 });
 
-test('an unknown deployment cannot silently select an expensive model', async () => {
-  await assert.rejects(triage('unknown-alias'), /supported actual model/);
-});
+for (const model of ['unknown-alias', 'gpt-4.1-nano']) {
+  test(`${model} is not an allowed triage deployment or rollback`, async () => {
+    await assert.rejects(triage(model), /supported actual model/);
+  });
+}

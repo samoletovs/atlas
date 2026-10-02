@@ -208,15 +208,16 @@ redeploy with empty secret parameters.
 
 [copilot-triage.yml](.github/workflows/copilot-triage.yml), job `triage`,
 defaults repository variable `TRIAGE_DEPLOYMENT` to Luna, cap 300 and
-`reasoning_effort=none`. Rollback accepts `gpt-4.1-nano`, `gpt-4o-mini`
-or `gpt-4.1` with legacy parameters. Incomplete/refused output requires human
+`reasoning_effort=none`. Rollback accepts only `gpt-4o-mini` or `gpt-4.1`
+with legacy parameters; nano overrides are rejected. Incomplete/refused output requires human
 review rather than assigning work.
 
 The workflow still uses the existing endpoint and API-key secrets, not the
-SWA credential or classic-agent identity. FoundryLab disables key auth, so
-its new deployment is **not** evidence this workflow can call Luna. Parent
-must verify the key-compatible resource/deployment/actual-model triple or
-approve a separate auth migration. No secret/auth change is included here.
+SWA credential or classic-agent identity. Parent reports Luna provisioned on
+both accounts and the synthetic candidate gate passed (2026-10-02). The
+workflow must still target the verified key-compatible account, not MI-only
+foundryLab. Clear any retired nano `TRIAGE_DEPLOYMENT` variable or set Luna
+before activation. No secret/auth change is included here.
 
 ## Status
 
