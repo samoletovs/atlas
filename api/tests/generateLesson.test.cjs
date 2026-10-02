@@ -42,6 +42,7 @@ function loadShared(name, env, dependencies = {}) {
 
 function premiumLedger() {
   const records = new Map();
+  const operations = [];
   let revision = 0;
   const save = document => {
     const record = { ...document, _etag: String(++revision) };
@@ -50,7 +51,9 @@ function premiumLedger() {
   };
   return {
     records,
+    operations,
     items: { create: async document => {
+      operations.push('create');
       if (records.has(document.id)) throw Object.assign(new Error('Conflict'), { code: 409 });
       return save(document);
     } },
@@ -58,10 +61,12 @@ function premiumLedger() {
       assert.equal(partition, '__atlas_sol_budget__');
       return {
         read: async () => {
+          operations.push('read');
           if (!records.has(id)) throw Object.assign(new Error('Not found'), { code: 404 });
           return { resource: { ...records.get(id) } };
         },
         replace: async (document, options) => {
+          operations.push('replace');
           assert.equal(options.accessCondition.type, 'IfMatch');
           if (options.accessCondition.condition !== records.get(id)?._etag) {
             throw Object.assign(new Error('Precondition failed'), { code: 412 });
@@ -80,6 +85,8 @@ function budgetModule(env = {}, ledger = premiumLedger()) {
 function endpoint(content, existing = [], options = {}) {
   const writes = [];
   let calls = 0;
+  let askTurns = 0;
+  let clients = 0;
   const requests = [];
   const env = { FOUNDRY_AOAI_ENDPOINT: 'https://synthetic.invalid', ...options.env };
   const budget = budgetModule(env, options.ledger);
@@ -87,6 +94,7 @@ function endpoint(content, existing = [], options = {}) {
     '@azure/identity': { DefaultAzureCredential: class {}, getBearerTokenProvider: () => async () => 'synthetic' },
     openai: { AzureOpenAI: class {
       constructor(configuration) {
+        clients++;
         assert.equal(configuration.deployment, undefined, 'client must not pin the routine deployment');
         assert.equal(configuration.maxRetries, 0, 'hidden retries bypass the reservation');
         this.chat = { completions: { create: async request => {
@@ -103,7 +111,7 @@ function endpoint(content, existing = [], options = {}) {
     '@azure/functions': { app: { http() {} } },
     '../shared/cosmos.js': {
       lessonsV2Container: () => ({
-        item: () => ({ read: async () => ({ resource: lesson() }) }),
+        item: () => ({ read: async () => ({ resource: options.storedLesson ?? lesson() }) }),
         items: {
           query: () => ({ fetchAll: async () => ({ resources: existing }) }),
           create: async (document) => { writes.push(document); return { resource: document }; },
@@ -116,7 +124,7 @@ function endpoint(content, existing = [], options = {}) {
     },
     '../shared/quota.js': {
       checkQuota: async () => ({ exceeded: false }),
-      consumeAskTurn: async () => ({ exceeded: false }),
+      consumeAskTurn: async () => { askTurns++; return { exceeded: false }; },
     },
     '../shared/budget.js': budget,
     '../shared/openaiClient.js': openai,
@@ -129,7 +137,7 @@ function endpoint(content, existing = [], options = {}) {
     },
   }, { filename: sourcePath });
   return {
-    writes, requests, budget, calls: () => calls,
+    writes, requests, budget, calls: () => calls, askTurns: () => askTurns, clients: () => clients,
     run: (body = {}) => (options.ask ? exports.askLesson : exports.generateLesson)(
       { params: { id: 'synthetic' }, json: async () => ({
         title: 'A synthetic lesson', topic: 'synthetic', question: 'Explain the trade-off', ...body,
@@ -206,12 +214,12 @@ test('only deep lessons select Sol with low reasoning and a finite completion ce
   assert.ok(api.requests.every(r => r.max_tokens === undefined && r.temperature === undefined));
 });
 
-test('a priced actual model can use an explicit deployment alias', async () => {
+test('a matching explicit deployment and model uses the full Sol reservation', async () => {
   const api = endpoint(JSON.stringify(lesson()), [], { env: {
-    FOUNDRY_LESSON_DEPLOYMENT: 'approved-sol', FOUNDRY_LESSON_MODEL: 'gpt-6-sol',
+    FOUNDRY_LESSON_DEPLOYMENT: 'gpt-6-sol', FOUNDRY_LESSON_MODEL: 'gpt-6-sol',
   } });
   assert.equal((await api.run({ depth: 'deep' })).status, 201);
-  assert.equal(api.requests[0].model, 'approved-sol');
+  assert.equal(api.requests[0].model, 'gpt-6-sol');
   assert.equal(api.requests[0].reasoning_effort, 'low');
   assert.ok(api.budget.getBudgetStats().spentUsd > 0.04096, 'uncached input must also be reserved');
 });
@@ -219,7 +227,8 @@ test('a priced actual model can use an explicit deployment alias', async () => {
 for (const model of ['gpt-4.1', 'gpt-4o-mini']) {
   test(`${model} remains callable for both tiers`, async () => {
     const api = endpoint(JSON.stringify(lesson()), [], { env: {
-      FOUNDRY_DEPLOYMENT: model, FOUNDRY_LESSON_DEPLOYMENT: model,
+      FOUNDRY_DEPLOYMENT: model, FOUNDRY_MODEL: model,
+      FOUNDRY_LESSON_DEPLOYMENT: model, FOUNDRY_LESSON_MODEL: model,
     } });
     assert.equal((await api.run()).status, 201);
     assert.equal((await api.run({ depth: 'deep' })).status, 201);
@@ -246,10 +255,19 @@ for (const options of [{ finish: 'length' }, { refusal: 'Refused' },
   });
 }
 
-test('oversized input cannot consume inference or overflow the short-context estimate', async () => {
+test('oversized deep input cannot consume inference or overflow the Sol bound', async () => {
   const api = endpoint(JSON.stringify(lesson()));
-  assert.equal((await api.run({ rationale: 'x'.repeat(24_000) })).status, 502);
+  assert.equal((await api.run({ depth: 'deep', rationale: 'x'.repeat(24_000) })).status, 502);
   assert.equal(api.calls(), 0);
+});
+
+test('the exact deep input bound does not become a routine input bound', () => {
+  const helpers = loadShared('openaiClient.ts', {}, { '@azure/identity': {}, openai: {} });
+  const messages = [{ role: 'user', content: 'x'.repeat(23984) }];
+  assert.equal(helpers.estimateInputTokens(messages, 'deep-lesson'), 24000);
+  messages[0].content += 'x';
+  assert.throws(() => helpers.estimateInputTokens(messages, 'deep-lesson'), /24000/);
+  assert.equal(helpers.estimateInputTokens(messages, 'routine'), 24001);
 });
 
 test('budget reservation charges uncached input and reasoning output without overshoot', async () => {
@@ -368,3 +386,66 @@ test('two real lesson handlers share the premium allowance before either publish
   assert.equal(first.calls() + second.calls(), 1);
   assert.equal(first.writes.length + second.writes.length, 1);
 });
+
+for (const [deployment, model] of [
+  ['gpt-6-sol', 'gpt-6-luna'],
+  ['gpt-6-sol', 'gpt-4o-mini'],
+  ['gpt-6-luna', 'gpt-6-sol'],
+  ['unverified-sol-alias', 'gpt-6-luna'],
+]) {
+  for (const route of ['routine lesson', 'deep lesson', 'follow-up']) {
+    test(`${route} rejects ${deployment}/${model} before budget storage or inference with Sol disabled`, async () => {
+      const ledger = premiumLedger();
+      const prefix = route === 'deep lesson' ? 'FOUNDRY_LESSON' : 'FOUNDRY';
+      const api = endpoint(JSON.stringify(lesson()), [], {
+        ledger, ask: route === 'follow-up',
+        env: {
+          [`${prefix}_DEPLOYMENT`]: deployment, [`${prefix}_MODEL`]: model,
+          ATLAS_SOL_DAILY_BUDGET_USD: '0',
+        },
+      });
+      const response = await api.run(route === 'deep lesson' ? { depth: 'deep' } : {});
+      assert.equal(response.status, 502);
+      assert.match(response.jsonBody.error, /deployment|model/i);
+      assert.equal(api.calls(), 0);
+      assert.equal(api.clients(), 0);
+      assert.equal(api.askTurns(), 0);
+      assert.equal(api.writes.length, 0);
+      assert.deepEqual(ledger.operations, []);
+    });
+  }
+}
+
+for (const [historyChars, lessonChars] of [[10000, 3000], [12000, 6000]]) {
+  test(`routine Russian chat preserves ${historyChars} history and ${lessonChars} lesson characters`, async () => {
+    const api = endpoint('Synthetic answer', [], {
+      ask: true, storedLesson: lesson({ body: '\u044f'.repeat(lessonChars), language: 'ru' }),
+    });
+    const history = Array.from({ length: 8 }, (_, index) => ({
+      role: index % 2 ? 'assistant' : 'user', content: '\u0436'.repeat(historyChars / 8),
+    }));
+    const response = await api.run({ history, question: '\u043a'.repeat(1000) });
+    assert.equal(response.status, 200);
+    assert.equal(api.askTurns(), 1);
+    assert.equal(api.calls(), 1);
+    assert.equal(api.requests[0].model, 'gpt-6-luna');
+    assert.equal(api.requests[0].messages.length, 10);
+    assert.deepEqual(JSON.parse(JSON.stringify(api.requests[0].messages.slice(1, -1))), history);
+    assert.ok(api.requests[0].messages[0].content.includes('\u044f'.repeat(lessonChars)));
+    assert.ok(api.budget.getBudgetStats().spentUsd > 0);
+  });
+}
+
+for (const [name, body] of [
+  ['oversized question', { question: 'x'.repeat(1001) }],
+  ['oversized history', { history: Array.from({ length: 8 }, () => ({
+    role: 'user', content: 'x'.repeat(2000),
+  })) }],
+]) {
+  test(`${name} fails before consuming a follow-up quota turn`, async () => {
+    const api = endpoint('Synthetic answer', [], { ask: true });
+    assert.equal((await api.run(body)).status, 400);
+    assert.equal(api.askTurns(), 0);
+    assert.equal(api.calls(), 0);
+  });
+}

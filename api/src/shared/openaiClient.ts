@@ -43,10 +43,12 @@ export function completionOptions(model: ActualModel, maxTokens: number, tempera
   return { max_tokens: maxTokens, temperature };
 }
 
-export function estimateInputTokens(messages: readonly TextMessage[]): number {
+export function estimateInputTokens(messages: readonly TextMessage[], purpose: ModelPurpose): number {
   // UTF-8 bytes plus message framing conservatively bound uncached text tokens.
   const tokens = messages.reduce((sum, message) => sum + Buffer.byteLength(message.content, 'utf8') + 16, 0);
-  if (tokens > 24_000) throw new Error('Model input exceeds the 24000-token reservation limit');
+  if (purpose === 'deep-lesson' && tokens > 24_000) {
+    throw new Error('Deep lesson input exceeds the 24000-token reservation limit');
+  }
   return tokens;
 }
 
@@ -92,9 +94,9 @@ export async function getOpenAIClientForUser(
   const deployment = (process.env[`${prefix}_DEPLOYMENT`] ??
     (purpose === 'deep-lesson' ? 'gpt-6-sol' : 'gpt-6-luna')).trim();
   const configuredModel = (process.env[`${prefix}_MODEL`] ?? deployment).trim();
-  const model = SUPPORTED_MODELS.find(candidate => candidate === configuredModel);
-  if (!deployment || !model) {
-    throw new Error(`${prefix}_MODEL must identify the actual supported model, not a deployment alias`);
+  const model = SUPPORTED_MODELS.find(candidate => candidate === deployment);
+  if (!model || configuredModel !== model) {
+    throw new Error(`${prefix}_DEPLOYMENT and ${prefix}_MODEL must match a verified same-named model; unverified aliases are not allowed`);
   }
   if (purpose === 'routine' && model === 'gpt-6-sol') {
     throw new Error('Sol is restricted to explicitly deep lessons, not the routine deployment');

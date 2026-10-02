@@ -258,7 +258,7 @@ async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string)
     { role: 'system', content: LIBRARIAN_INSTRUCTIONS },
     { role: 'user', content: buildUserPrompt(input, lang) },
   ];
-  await recordEstimatedCost(model, maxTokens, estimateInputTokens(messages));
+  await recordEstimatedCost(model, maxTokens, estimateInputTokens(messages, deep ? 'deep-lesson' : 'routine'));
   const completion = await client.chat.completions.create({
     model: deployment,
     ...completionOptions(model, maxTokens, 0.4),

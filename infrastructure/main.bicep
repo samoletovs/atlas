@@ -19,16 +19,18 @@ param ownerObjectId string
 param foundryAoaiEndpoint string = 'https://foundrylab-aiservices.cognitiveservices.azure.com/'
 
 @description('Routine API model deployment; promote only after the parent model pilot gate.')
+@allowed(['gpt-6-luna', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryDeployment string = 'gpt-6-luna'
 
-@description('Actual model behind the routine deployment alias.')
+@description('Must match the routine deployment; unverified aliases are not admitted.')
 @allowed(['gpt-6-luna', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryModel string = foundryDeployment
 
 @description('API deep-lesson deployment only; not the scheduled classic Foundry agents.')
+@allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryLessonDeployment string = 'gpt-6-sol'
 
-@description('Actual model behind the deep-lesson deployment alias.')
+@description('Must match the deep-lesson deployment; unverified aliases are not admitted.')
 @allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryLessonModel string = foundryLessonDeployment
 

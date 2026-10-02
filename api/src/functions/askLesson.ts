@@ -79,21 +79,6 @@ export async function askLesson(
   const id = req.params.id;
   if (!id) return { status: 400, jsonBody: { error: 'Missing lesson id' } };
 
-  // Per-user soft rate limit on follow-up chat turns. Atomically bumps a
-  // counter on the user doc so a runaway client can't drain tokens.
-  const quota = await consumeAskTurn(userId);
-  if (quota.exceeded) {
-    return {
-      status: 429,
-      jsonBody: {
-        error: `Daily chat cap reached (${quota.used}/${quota.limit}). Resets at ${quota.resetAt}.`,
-        used: quota.used,
-        limit: quota.limit,
-        resetAt: quota.resetAt,
-      },
-    };
-  }
-
   // Global per-instance daily $ cap. Defense-in-depth on top of per-user quota.
   const bg = checkBudget();
   if (bg.exceeded) {
@@ -176,7 +161,20 @@ export async function askLesson(
       ...history.map((t) => ({ role: t.role, content: t.content })),
       { role: 'user', content: question },
     ];
-    await recordEstimatedCost(model, MAX_ANSWER_TOKENS, estimateInputTokens(messages));
+    const inputTokens = estimateInputTokens(messages, 'routine');
+    const quota = await consumeAskTurn(userId);
+    if (quota.exceeded) {
+      return {
+        status: 429,
+        jsonBody: {
+          error: `Daily chat cap reached (${quota.used}/${quota.limit}). Resets at ${quota.resetAt}.`,
+          used: quota.used,
+          limit: quota.limit,
+          resetAt: quota.resetAt,
+        },
+      };
+    }
+    await recordEstimatedCost(model, MAX_ANSWER_TOKENS, inputTokens);
     const completion = await client.chat.completions.create({
       model: deployment,
       ...completionOptions(model, MAX_ANSWER_TOKENS, 0.4),

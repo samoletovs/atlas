@@ -144,8 +144,12 @@ all follow-up chat stay routine. No model decides whether to escalate.
 | `FOUNDRY_API_VERSION` | `2024-10-21` |
 | `ATLAS_SOL_DAILY_BUDGET_USD` | `0.10` maximum; lower or `0` to disable |
 
-Existing app settings shadow code defaults. An alias requires its actual-model
-setting; unknown actual models are rejected, never assigned a guessed price.
+Existing app settings shadow code defaults. Deployment and actual-model
+settings must agree with the verified same-named deployment. Contradictory
+pairs are rejected before client construction or premium-budget storage.
+Arbitrary aliases are not admitted merely because a `*_MODEL` is supplied:
+adding an alias requires a separately reviewed resource/deployment/model
+mapping. No model detection or unknown-price fallback is performed.
 Do not change the existing auth/SP secrets.
 
 Luna requests use `reasoning_effort=none`, Sol `low`; completion ceilings are
@@ -155,6 +159,12 @@ disabled so one cost reservation covers one request. The existing
 `ATLAS_DAILY_BUDGET_USD` value is retained (default $5 per warm instance/day);
 the guard now reserves conservatively bounded **uncached input plus full
 output** before inference and refuses an unaffordable request with HTTP 429.
+The 24,000-byte conservative input-reservation ceiling applies to deep lessons,
+not routine chat. Follow-up chat retains its existing 8-turn / 2,000-character
+per-turn / 12,000-character total history, 6,000-character lesson excerpt and
+1,000-character question limits. Valid multilingual input is not rejected
+because its UTF-8 representation is longer. Input/configuration validation
+finishes before an ask quota turn is consumed.
 That general guard remains per-instance. **Sol additionally has a hard shared
 $0.10/UTC-day admission limit**, including the uncapped-user allowlist.
 `ATLAS_SOL_DAILY_BUDGET_USD` may lower or disable it; a value above $0.10 is

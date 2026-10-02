@@ -55,6 +55,10 @@ uncapped users. `ATLAS_SOL_DAILY_BUDGET_USD` can only lower/disable this pilot
 limit. Storage failures or uncertain writes block inference; reservations are
 not refunded. Reserve uncached input and full completion cost; never assume
 cache hits or guess a price for an unknown alias.
+Deployment/model pairs must agree with the approved same-named deployments;
+unverified aliases and conflicting `*_MODEL` assertions fail before inference
+or premium admission. Deep lessons retain the 24,000-byte input-reservation
+bound; routine chat uses its existing character limits, including Russian.
 See [README.md](README.md#model-pilot) for shadowing settings, rollback,
 persistent classic agents and the separate triage auth blocker.
 
