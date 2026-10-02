@@ -40,12 +40,49 @@ function loadShared(name, env, dependencies = {}) {
   return exports;
 }
 
+function premiumLedger() {
+  const records = new Map();
+  let revision = 0;
+  const save = document => {
+    const record = { ...document, _etag: String(++revision) };
+    records.set(document.id, record);
+    return { resource: { ...record } };
+  };
+  return {
+    records,
+    items: { create: async document => {
+      if (records.has(document.id)) throw Object.assign(new Error('Conflict'), { code: 409 });
+      return save(document);
+    } },
+    item(id, partition) {
+      assert.equal(partition, '__atlas_sol_budget__');
+      return {
+        read: async () => {
+          if (!records.has(id)) throw Object.assign(new Error('Not found'), { code: 404 });
+          return { resource: { ...records.get(id) } };
+        },
+        replace: async (document, options) => {
+          assert.equal(options.accessCondition.type, 'IfMatch');
+          if (options.accessCondition.condition !== records.get(id)?._etag) {
+            throw Object.assign(new Error('Precondition failed'), { code: 412 });
+          }
+          return save(document);
+        },
+      };
+    },
+  };
+}
+
+function budgetModule(env = {}, ledger = premiumLedger()) {
+  return loadShared('budget.ts', env, { './cosmos.js': { usersContainer: () => ledger } });
+}
+
 function endpoint(content, existing = [], options = {}) {
   const writes = [];
   let calls = 0;
   const requests = [];
   const env = { FOUNDRY_AOAI_ENDPOINT: 'https://synthetic.invalid', ...options.env };
-  const budget = loadShared('budget.ts', env);
+  const budget = budgetModule(env, options.ledger);
   const openai = loadShared('openaiClient.ts', env, {
     '@azure/identity': { DefaultAzureCredential: class {}, getBearerTokenProvider: () => async () => 'synthetic' },
     openai: { AzureOpenAI: class {
@@ -215,20 +252,20 @@ test('oversized input cannot consume inference or overflow the short-context est
   assert.equal(api.calls(), 0);
 });
 
-test('budget reservation charges uncached input and reasoning output without overshoot', () => {
-  const budget = loadShared('budget.ts', { ATLAS_DAILY_BUDGET_USD: '0.02' });
-  budget.recordEstimatedCost('gpt-6-sol', 1000, 1000);
+test('budget reservation charges uncached input and reasoning output without overshoot', async () => {
+  const budget = budgetModule({ ATLAS_DAILY_BUDGET_USD: '0.02' });
+  await budget.recordEstimatedCost('gpt-6-sol', 1000, 1000);
   assert.equal(budget.getBudgetStats().spentUsd, 0.012);
-  assert.throws(() => budget.recordEstimatedCost('gpt-6-sol', 1000, 1000), budget.BudgetReservationError);
+  await assert.rejects(budget.recordEstimatedCost('gpt-6-sol', 1000, 1000), budget.BudgetReservationError);
   assert.equal(budget.getBudgetStats().spentUsd, 0.012);
-  assert.throws(() => budget.recordEstimatedCost('unknown', 1000, 1000), /No price/);
+  await assert.rejects(budget.recordEstimatedCost('unknown', 1000, 1000), /No price/);
   assert.equal(budget.MODEL_PRICES['gpt-6-luna'].cachedInput, 0.01);
   assert.equal(budget.MODEL_PRICES['gpt-6-sol'].cachedInput, 0.20);
 });
 
 test('invalid configured budgets fail closed rather than silently granting five dollars', () => {
   for (const raw of ['invalid', '1junk', '0', '-1']) {
-    assert.throws(() => loadShared('budget.ts', { ATLAS_DAILY_BUDGET_USD: raw }).checkBudget(), /positive number/);
+    assert.throws(() => budgetModule({ ATLAS_DAILY_BUDGET_USD: raw }).checkBudget(), /positive number/);
   }
 });
 
@@ -250,4 +287,84 @@ test('follow-up chat refuses an unaffordable request before inference', async ()
 test('follow-up chat cannot return a truncated but otherwise plausible answer', async () => {
   const api = endpoint('Incomplete answer', [], { ask: true, finish: 'length' });
   assert.equal((await api.run()).status, 502);
+});
+
+test('independent workers cannot jointly reserve more than ten cents of Sol in a UTC day', async () => {
+  const ledger = premiumLedger();
+  const first = budgetModule({}, ledger);
+  const second = budgetModule({}, ledger);
+  const settled = await Promise.allSettled([
+    first.recordEstimatedCost('gpt-6-sol', 4000, 10000),
+    second.recordEstimatedCost('gpt-6-sol', 4000, 10000),
+  ]);
+  assert.equal(settled.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(settled.filter(result => result.status === 'rejected').length, 1);
+  assert.equal([...ledger.records.values()][0].reservedMicroUsd, 60000);
+  const restarted = budgetModule({}, ledger);
+  await assert.rejects(restarted.recordEstimatedCost('gpt-6-sol', 4000, 10000), /Sol daily/);
+  await restarted.recordEstimatedCost('gpt-6-sol', 4000, 0);
+  assert.equal([...ledger.records.values()][0].reservedMicroUsd, 100000);
+  await assert.rejects(restarted.recordEstimatedCost('gpt-6-sol', 1, 0), /Sol daily/);
+});
+
+test('every Sol route waits for durable admission before inference and publication', async () => {
+  const unavailable = premiumLedger();
+  unavailable.item = () => ({ read: async () => { throw new Error('Cosmos unavailable'); } });
+  const api = endpoint(JSON.stringify(lesson()), [], { ledger: unavailable });
+  assert.equal((await api.run({ depth: 'deep' })).status, 502);
+  assert.equal(api.calls(), 0);
+  assert.equal(api.writes.length, 0);
+});
+
+test('the Sol cap can be lowered or disabled, never raised beyond ten cents', async () => {
+  for (const raw of ['0.100001', '5', 'garbage', '']) {
+    await assert.rejects(
+      budgetModule({ ATLAS_SOL_DAILY_BUDGET_USD: raw }).recordEstimatedCost('gpt-6-sol', 1, 0),
+      /ATLAS_SOL_DAILY_BUDGET_USD/,
+    );
+  }
+  await assert.rejects(
+    budgetModule({ ATLAS_SOL_DAILY_BUDGET_USD: '0' }).recordEstimatedCost('gpt-6-sol', 1, 0),
+    /Sol daily/,
+  );
+});
+
+test('an unconfirmed durable reservation cannot start inference or get refunded', async () => {
+  const ledger = premiumLedger();
+  const create = ledger.items.create;
+  ledger.items.create = async document => {
+    await create(document);
+    throw new Error('Response lost after write');
+  };
+  const api = endpoint(JSON.stringify(lesson()), [], { ledger });
+  assert.equal((await api.run({ depth: 'deep' })).status, 502);
+  assert.equal(api.calls(), 0);
+  assert.ok([...ledger.records.values()][0].reservedMicroUsd > 0);
+});
+
+test('malformed durable budget state fails closed', async () => {
+  const ledger = premiumLedger();
+  const day = new Date().toISOString().slice(0, 10);
+  ledger.records.set(`sol-budget-${day}`, {
+    id: `sol-budget-${day}`, userId: '__atlas_sol_budget__', date: day,
+    kind: 'model-budget', reservedMicroUsd: -1, _etag: 'invalid',
+  });
+  await assert.rejects(budgetModule({}, ledger).recordEstimatedCost('gpt-6-sol', 1, 0), /Invalid Sol budget/);
+});
+
+test('the routine configuration cannot turn every lesson or chat into Sol', async () => {
+  const api = endpoint(JSON.stringify(lesson()), [], { env: { FOUNDRY_DEPLOYMENT: 'gpt-6-sol' } });
+  assert.equal((await api.run()).status, 502);
+  assert.equal(api.calls(), 0);
+});
+
+test('two real lesson handlers share the premium allowance before either publishes', async () => {
+  const ledger = premiumLedger();
+  const first = endpoint(JSON.stringify(lesson()), [], { ledger });
+  const second = endpoint(JSON.stringify(lesson()), [], { ledger });
+  const request = { depth: 'deep', rationale: 'x'.repeat(5000) };
+  const statuses = await Promise.all([first.run(request), second.run(request)]);
+  assert.deepEqual(statuses.map(result => result.status).sort(), [201, 429]);
+  assert.equal(first.calls() + second.calls(), 1);
+  assert.equal(first.writes.length + second.writes.length, 1);
 });

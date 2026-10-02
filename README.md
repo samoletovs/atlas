@@ -142,6 +142,7 @@ all follow-up chat stay routine. No model decides whether to escalate.
 | `FOUNDRY_DEPLOYMENT` / `FOUNDRY_MODEL` | `gpt-6-luna` / `gpt-6-luna` |
 | `FOUNDRY_LESSON_DEPLOYMENT` / `FOUNDRY_LESSON_MODEL` | `gpt-6-sol` / `gpt-6-sol` |
 | `FOUNDRY_API_VERSION` | `2024-10-21` |
+| `ATLAS_SOL_DAILY_BUDGET_USD` | `0.10` maximum; lower or `0` to disable |
 
 Existing app settings shadow code defaults. An alias requires its actual-model
 setting; unknown actual models are rejected, never assigned a guessed price.
@@ -154,8 +155,25 @@ disabled so one cost reservation covers one request. The existing
 `ATLAS_DAILY_BUDGET_USD` value is retained (default $5 per warm instance/day);
 the guard now reserves conservatively bounded **uncached input plus full
 output** before inference and refuses an unaffordable request with HTTP 429.
-It remains in-memory/per-instance, **not** a durable fleet/monthly budget;
-the parent must enforce the pilot's monthly limit externally.
+That general guard remains per-instance. **Sol additionally has a hard shared
+$0.10/UTC-day admission limit**, including the uncapped-user allowlist.
+`ATLAS_SOL_DAILY_BUDGET_USD` may lower or disable it; a value above $0.10 is
+rejected. Selecting Sol as the routine model is also rejected.
+
+Before inference, a reservation in the existing Cosmos `users` container
+atomically creates or ETag-conditionally updates `sol-budget-YYYY-MM-DD` in
+the dedicated `__atlas_sol_budget__` partition. Integer micro-USD reservations
+cover conservatively bounded uncached input and the full output ceiling.
+Workers, users and cold starts share the same row; a race rereads at most
+three times. Missing storage, malformed state or uncertain writes fail closed
+without calling the model. Failed requests are not refunded because their
+remote cost may be unknown. Exhaustion returns HTTP 429, not a silent model
+switch. No extra container, identity, or per-user profile field is introduced.
+
+This bounds automated Sol admission to **$3.10 over 31 UTC days**, not the
+whole Azure bill. Existing generation/ask quotas are unchanged. Parent still
+owns aggregate cycle enforcement (USD80 ceiling / USD70 reserve within the
+configured USD150 credit); Azure billing alerts do not stop model calls.
 
 Global short-context USD/M prices: Luna **0.10 input / 0.50 output / 0.01
 cached input**; Sol **2 / 10 / 0.20**. Reservations do not assume a cache hit.

@@ -96,6 +96,9 @@ export async function getOpenAIClientForUser(
   if (!deployment || !model) {
     throw new Error(`${prefix}_MODEL must identify the actual supported model, not a deployment alias`);
   }
+  if (purpose === 'routine' && model === 'gpt-6-sol') {
+    throw new Error('Sol is restricted to explicitly deep lessons, not the routine deployment');
+  }
   return {
     client: getDefaultClient(),
     deployment,

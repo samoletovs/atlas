@@ -176,7 +176,7 @@ export async function askLesson(
       ...history.map((t) => ({ role: t.role, content: t.content })),
       { role: 'user', content: question },
     ];
-    recordEstimatedCost(model, MAX_ANSWER_TOKENS, estimateInputTokens(messages));
+    await recordEstimatedCost(model, MAX_ANSWER_TOKENS, estimateInputTokens(messages));
     const completion = await client.chat.completions.create({
       model: deployment,
       ...completionOptions(model, MAX_ANSWER_TOKENS, 0.4),

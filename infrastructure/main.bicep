@@ -22,7 +22,7 @@ param foundryAoaiEndpoint string = 'https://foundrylab-aiservices.cognitiveservi
 param foundryDeployment string = 'gpt-6-luna'
 
 @description('Actual model behind the routine deployment alias.')
-@allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
+@allowed(['gpt-6-luna', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryModel string = foundryDeployment
 
 @description('API deep-lesson deployment only; not the scheduled classic Foundry agents.')
@@ -31,6 +31,9 @@ param foundryLessonDeployment string = 'gpt-6-sol'
 @description('Actual model behind the deep-lesson deployment alias.')
 @allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryLessonModel string = foundryLessonDeployment
+
+@description('Shared Sol USD/day cap. Runtime permits only 0..0.10; 0 disables Sol.')
+param atlasSolDailyBudgetUsd string = '0.10'
 
 @description('GitHub OAuth App client ID used by the SWA login flow. Optional — pass empty to skip and set it manually via az staticwebapp appsettings set. When set, redeploys keep it in place.')
 @secure()
@@ -315,6 +318,7 @@ resource swaSettings 'Microsoft.Web/staticSites/config@2024-04-01' = {
       FOUNDRY_LESSON_DEPLOYMENT: foundryLessonDeployment
       FOUNDRY_LESSON_MODEL: foundryLessonModel
       FOUNDRY_API_VERSION: '2024-10-21'
+      ATLAS_SOL_DAILY_BUDGET_USD: atlasSolDailyBudgetUsd
     },
     empty(githubClientId) ? {} : { GITHUB_CLIENT_ID: githubClientId },
     empty(githubClientSecret) ? {} : { GITHUB_CLIENT_SECRET: githubClientSecret },

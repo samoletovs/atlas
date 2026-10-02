@@ -48,9 +48,13 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 The model refresh is **not promoted**. The parent owns the combined +$10/month
 pilot and API/quality gates. Deep API lessons use Sol with low reasoning and a
 4,096 completion-token cap; other lessons use Luna/1,024 and ask-more Luna/600.
-The existing daily per-instance budget is not a durable global monthly cap.
-Reserve uncached input and full completion cost before calling the model; never
-assume cache hits or guess a price for an unknown alias.
+The existing general budget and per-user quotas remain. Sol also requires a
+durable, shared reservation in the existing Cosmos `users` container before
+inference: maximum $0.10 per UTC day across all users and instances, including
+uncapped users. `ATLAS_SOL_DAILY_BUDGET_USD` can only lower/disable this pilot
+limit. Storage failures or uncertain writes block inference; reservations are
+not refunded. Reserve uncached input and full completion cost; never assume
+cache hits or guess a price for an unknown alias.
 See [README.md](README.md#model-pilot) for shadowing settings, rollback,
 persistent classic agents and the separate triage auth blocker.
 
