@@ -18,8 +18,19 @@ param ownerObjectId string
 @description('Azure OpenAI / Foundry endpoint used by the lesson-generation agent. Default points at the foundryLab AI Services account (reused, no new resource).')
 param foundryAoaiEndpoint string = 'https://foundrylab-aiservices.cognitiveservices.azure.com/'
 
-@description('Azure OpenAI deployment (model alias) used by the lesson-generation agent.')
-param foundryDeployment string = 'gpt-4o-mini'
+@description('Routine API model deployment; promote only after the parent model pilot gate.')
+param foundryDeployment string = 'gpt-6-luna'
+
+@description('Actual model behind the routine deployment alias.')
+@allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
+param foundryModel string = foundryDeployment
+
+@description('API deep-lesson deployment only; not the scheduled classic Foundry agents.')
+param foundryLessonDeployment string = 'gpt-6-sol'
+
+@description('Actual model behind the deep-lesson deployment alias.')
+@allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
+param foundryLessonModel string = foundryLessonDeployment
 
 @description('GitHub OAuth App client ID used by the SWA login flow. Optional — pass empty to skip and set it manually via az staticwebapp appsettings set. When set, redeploys keep it in place.')
 @secure()
@@ -300,6 +311,10 @@ resource swaSettings 'Microsoft.Web/staticSites/config@2024-04-01' = {
       ATLAS_USER_ID: 'sam'
       FOUNDRY_AOAI_ENDPOINT: foundryAoaiEndpoint
       FOUNDRY_DEPLOYMENT: foundryDeployment
+      FOUNDRY_MODEL: foundryModel
+      FOUNDRY_LESSON_DEPLOYMENT: foundryLessonDeployment
+      FOUNDRY_LESSON_MODEL: foundryLessonModel
+      FOUNDRY_API_VERSION: '2024-10-21'
     },
     empty(githubClientId) ? {} : { GITHUB_CLIENT_ID: githubClientId },
     empty(githubClientSecret) ? {} : { GITHUB_CLIENT_SECRET: githubClientSecret },

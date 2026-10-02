@@ -34,6 +34,7 @@ jobs:
         env:
           AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
           AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
+          TRIAGE_DEPLOYMENT: ${{ vars.TRIAGE_DEPLOYMENT || 'gpt-6-luna' }}
         with:
           script: |
             const issue = context.payload.issue;
@@ -96,7 +97,13 @@ jobs:
               return;
             }
 
-            const deploymentName = 'gpt-4.1-nano';
+            const deploymentName = process.env.TRIAGE_DEPLOYMENT || 'gpt-6-luna';
+            if (!['gpt-6-luna', 'gpt-4.1', 'gpt-4o-mini', 'gpt-4.1-nano'].includes(deploymentName)) {
+              throw new Error('TRIAGE_DEPLOYMENT must name a supported actual model');
+            }
+            const tokenOptions = deploymentName === 'gpt-6-luna'
+              ? { max_completion_tokens: 300, reasoning_effort: 'none' }
+              : { max_tokens: 300, temperature: 0.1 };
             const apiUrl = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2025-01-01-preview`;
 
             const triagePrompt = `You are a project maintainer triaging a GitHub issue.
@@ -131,8 +138,7 @@ jobs:
               },
               body: JSON.stringify({
                 messages: [{ role: 'user', content: triagePrompt }],
-                max_tokens: 300,
-                temperature: 0.1
+                ...tokenOptions
               })
             });
 
@@ -150,7 +156,17 @@ jobs:
             }
 
             const result = await response.json();
-            const rawText = result.choices[0].message.content.trim();
+            const choice = result.choices?.[0];
+            if (!choice || choice.finish_reason !== 'stop' || choice.message?.refusal ||
+                typeof choice.message?.content !== 'string' || !choice.message.content.trim()) {
+              console.log('Incomplete or refused triage output; human review required');
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: issue.number, labels: ['needs-review']
+              });
+              return;
+            }
+            const rawText = choice.message.content.trim();
 
             // Parse JSON response
             let triage;

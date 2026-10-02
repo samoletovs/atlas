@@ -9,7 +9,9 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - **Frontend:** React 19 + Vite 8 + TypeScript, deployed to Azure Static Web Apps
 - **Backend:** Azure Functions v4 (Node 20, TypeScript)
 - **Database:** Cosmos DB (NoSQL) — containers: `lessons`, `topics`, `activity_events`
-- **Agent:** Microsoft Foundry — reuses [foundryLab](../foundryLab/) account, model `gpt-4o-mini`, temperature 0.2
+- **Models:** prepared selective pilot on `foundrylab-aiservices`: routine API
+  `gpt-6-luna`, explicitly deep lessons `gpt-6-sol` (both v2026-09-22).
+  Classic scheduled agents stay on `gpt-4o-mini` until separately verified.
 - **Auth:** GitHub OAuth via Static Web Apps built-in auth. Identity =
   GitHub handle; user docs are partitioned by `userId = login.toLowerCase()`.
   See [`docs/AUTH-GOOGLE.md`](docs/AUTH-GOOGLE.md) for the (deprecated)
@@ -42,6 +44,15 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - Foundry agent reuses foundryLab account → no new AOAI cost
 - SWA: Free tier (no custom domain initially)
 - Azure budget alert: €5/month threshold
+
+The model refresh is **not promoted**. The parent owns the combined +$10/month
+pilot and API/quality gates. Deep API lessons use Sol with low reasoning and a
+4,096 completion-token cap; other lessons use Luna/1,024 and ask-more Luna/600.
+The existing daily per-instance budget is not a durable global monthly cap.
+Reserve uncached input and full completion cost before calling the model; never
+assume cache hits or guess a price for an unknown alias.
+See [README.md](README.md#model-pilot) for shadowing settings, rollback,
+persistent classic agents and the separate triage auth blocker.
 
 ## Skills to invoke when working here
 

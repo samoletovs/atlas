@@ -125,6 +125,81 @@ For a production-only smoke run, set `ATLAS_SMOKE_ONLY=1` and run
 the local server; it does not filter tests. CI sets it only on the postdeployment
 smoke step. Leave it unset for `npm test` or `npm run test:portal`.
 
+## Model pilot
+
+**Prepared, not promoted.** Parent synthetic API/quality approval and the
+combined +$10/month pilot gate are prerequisites to deployment. Local tests
+use synthetic lessons and mocked storage, not real user workloads.
+
+All API model calls reuse `foundrylab-aiservices` (`foundrylab-rg`), with
+same-named `gpt-6-luna` and `gpt-6-sol` deployments serving v2026-09-22.
+Only `depth=deep` lesson requests select Sol; intro/intermediate lessons and
+all follow-up chat stay routine. No model decides whether to escalate.
+
+| SWA App Setting | Candidate value |
+|---|---|
+| `FOUNDRY_AOAI_ENDPOINT` | `https://foundrylab-aiservices.cognitiveservices.azure.com/` |
+| `FOUNDRY_DEPLOYMENT` / `FOUNDRY_MODEL` | `gpt-6-luna` / `gpt-6-luna` |
+| `FOUNDRY_LESSON_DEPLOYMENT` / `FOUNDRY_LESSON_MODEL` | `gpt-6-sol` / `gpt-6-sol` |
+| `FOUNDRY_API_VERSION` | `2024-10-21` |
+
+Existing app settings shadow code defaults. An alias requires its actual-model
+setting; unknown actual models are rejected, never assigned a guessed price.
+Do not change the existing auth/SP secrets.
+
+Luna requests use `reasoning_effort=none`, Sol `low`; completion ceilings are
+1,024 routine lesson / 4,096 deep lesson / 600 follow-up tokens, including
+reasoning. Refused or incomplete replies cannot be published. SDK retries are
+disabled so one cost reservation covers one request. The existing
+`ATLAS_DAILY_BUDGET_USD` value is retained (default $5 per warm instance/day);
+the guard now reserves conservatively bounded **uncached input plus full
+output** before inference and refuses an unaffordable request with HTTP 429.
+It remains in-memory/per-instance, **not** a durable fleet/monthly budget;
+the parent must enforce the pilot's monthly limit externally.
+
+Global short-context USD/M prices: Luna **0.10 input / 0.50 output / 0.01
+cached input**; Sol **2 / 10 / 0.20**. Reservations do not assume a cache hit.
+Rollback sets both deployment/model pairs to `gpt-4o-mini` or `gpt-4.1`.
+Legacy models receive `max_tokens` and temperature, without reasoning knobs.
+
+### Scheduled agents are separate
+
+[auto-generate.yml](.github/workflows/auto-generate.yml), job `generate`,
+runs [generate_lessons.py](scripts/generate_lessons.py) against the classic
+Foundry project endpoint. `FOUNDRY_AGENT_DEPLOYMENT` is deliberately pinned to
+`gpt-4o-mini` by default and takes precedence over legacy `FOUNDRY_DEPLOYMENT`.
+The existing persistent names are `atlas-teacher`, `atlas-planner` and
+`atlas-enhancer`; teacher/planner are updated on reuse and enhancer recreated.
+None was updated by this preparation.
+
+Classic `azure-ai-agents` 1.1 create/run signatures have no declared
+`reasoning_effort`; this script also lacks the API's daily dollar guard.
+It therefore refuses GPT-6 before opening a client. **Do not promote all
+three agents by changing the shared repository variable.** A separately
+budgeted, synthetic classic-service gate is needed before that path can use
+GPT-6. Keep `FOUNDRY_AGENT_DEPLOYMENT=gpt-4o-mini` (or `gpt-4.1` rollback).
+
+Production API code ships through
+[azure-static-web-apps.yml](.github/workflows/azure-static-web-apps.yml), job
+**Build and Deploy Job**. Code publication does not update SWA app settings;
+parent must apply the reviewed settings without wiping existing secrets.
+The existing Bicep appsettings PUT replaces the collection, so do not blindly
+redeploy with empty secret parameters.
+
+### Issue triage
+
+[copilot-triage.yml](.github/workflows/copilot-triage.yml), job `triage`,
+defaults repository variable `TRIAGE_DEPLOYMENT` to Luna, cap 300 and
+`reasoning_effort=none`. Rollback accepts `gpt-4.1-nano`, `gpt-4o-mini`
+or `gpt-4.1` with legacy parameters. Incomplete/refused output requires human
+review rather than assigning work.
+
+The workflow still uses the existing endpoint and API-key secrets, not the
+SWA credential or classic-agent identity. FoundryLab disables key auth, so
+its new deployment is **not** evidence this workflow can call Luna. Parent
+must verify the key-compatible resource/deployment/actual-model triple or
+approve a separate auth migration. No secret/auth change is included here.
+
 ## Status
 
 **MVP / multi-user beta.** GitHub onboarding, lesson generation, follow-up
