@@ -13,6 +13,8 @@ for (const [name, body] of [
   ['Russian section', `## Что изучать дальше\n${JSON.stringify(next)}`],
   ['bold heading', `**Следующие темы:**\n${JSON.stringify(next)}`],
   ['JSON section', `## What to learn next\n\`\`\`json\n${JSON.stringify(next, null, 2)}\n\`\`\``],
+  ['adjacent prose', `Начало объяснения.\n${JSON.stringify(next)}\nПродолжение урока.`],
+  ['section with adjacent prose', `## Что изучать дальше\n${JSON.stringify(next)}\nПродолжение урока.`],
 ]) {
   test(`recovers ${name} without changing hierarchical topics or later prose`, () => {
     const result = recoverLessonSuggestions({
@@ -24,6 +26,7 @@ for (const [name, body] of [
     expect(result.body).toContain('## Итог\nПолезный вывод.');
     expect(result.body).not.toContain('"topic"');
     expect(result.body).not.toContain('Что изучать дальше');
+    if (name.includes('adjacent prose')) expect(result.body).toContain('Продолжение урока.');
     expect(recoverLessonSuggestions(result)).toEqual(result);
   });
 }
@@ -44,6 +47,10 @@ for (const body of [
   `\`\`\`json\n${JSON.stringify(next)}\n\`\`\``,
   `~~~typescript\n${JSON.stringify(next)}\n~~~`,
   `## What to learn next\n\`\`\`json\n${JSON.stringify(next)}`,
+  `## What to learn next\n  \`\`\`JSON\n{broken}\n  \`\`\``,
+  `    ${JSON.stringify(next[0])}`,
+  `\t${JSON.stringify(next[0])}`,
+  JSON.stringify(next, null, 2).split('\n').map(line => `    ${line}`).join('\n'),
 ]) {
   test(`preserves prose, malformed data or code: ${body.slice(0, 50)}`, () => {
     const result = recoverLessonSuggestions({ body, suggested_next: [] });

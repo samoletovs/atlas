@@ -47,6 +47,7 @@ export function recoverLessonSuggestions<T extends { body: string; suggested_nex
   let block: string[] = [];
   let headingIndex: number | null = null;
   let fence: string | null = null;
+  let fenceOpening = '';
   let recoverFence = false;
   const flush = () => {
     if (!block.length) return;
@@ -71,8 +72,9 @@ export function recoverLessonSuggestions<T extends { body: string; suggested_nex
         if (recoverFence) {
           if (parseSuggestions(block.join('\n'))) flush();
           else {
-            output.push(`${fence}json`, ...block, line);
+            output.push(fenceOpening, ...block, line);
             block = [];
+            headingIndex = null;
           }
         } else output.push(line);
         fence = null;
@@ -83,6 +85,7 @@ export function recoverLessonSuggestions<T extends { body: string; suggested_nex
     if (marker) {
       flush();
       fence = marker[1];
+      fenceOpening = line;
       recoverFence = headingIndex !== null && marker[2].trim().toLowerCase() === 'json';
       if (!recoverFence) {
         output.push(line);
@@ -96,10 +99,22 @@ export function recoverLessonSuggestions<T extends { body: string; suggested_nex
       flush();
       output.push(line);
       if (line.trim()) headingIndex = null;
-    } else block.push(line);
+    } else if (!block.length && /^(?: {4}|\t)/.test(line)) {
+      output.push(line);
+      headingIndex = null;
+    } else {
+      const startsJson = (text: string) => /^\s*(?:(?:[-*]|\d+\.)[ \t]+)?[{\[]/.test(text);
+      if (block.length && !startsJson(block[0]) && startsJson(line)) flush();
+      block.push(line);
+      if (parseSuggestions(block.join('\n'))) flush();
+    }
   }
   if (fence && recoverFence) {
-    output.push(`${fence}json`, ...block);
+    output.push(fenceOpening, ...block);
   } else flush();
-  return { ...lesson, body: output.join('\n').trim(), suggested_next: [...suggestions.values()] };
+  return {
+    ...lesson,
+    body: output.join('\n').replace(/^(?:[ \t]*\n)+|(?:\n[ \t]*)+$/g, ''),
+    suggested_next: [...suggestions.values()],
+  };
 }
