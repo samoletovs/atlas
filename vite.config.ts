@@ -63,7 +63,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:7071',
+      '/api': {
+        target: 'http://localhost:7071',
+        // This pure module is also bundled into the reader.
+        bypass: (req) => req.url?.split('?')[0] === '/api/src/shared/lessonSuggestions.ts' ? req.url : undefined,
+      },
       '/.auth': 'http://localhost:7071',
     },
   },

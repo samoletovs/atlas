@@ -264,6 +264,9 @@ export class PortalBackend {
         await route.fulfill({ json: { clientPrincipal: principal } });
       } else if (url.pathname.startsWith('/.auth/')) {
         await this.unexpected(route, 'Unexpected authentication navigation');
+      } else if (url.pathname === '/api/src/shared/lessonSuggestions.ts') {
+        // Vite serves this dependency-free module shared by the reader and API.
+        await route.continue();
       } else if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
         const hold = this.postHolds.find(candidate => !candidate.claimed
           && route.request().method() === 'POST' && candidate.pathname === url.pathname

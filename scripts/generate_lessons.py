@@ -339,34 +339,162 @@ def generate_lesson(
         text = re.sub(r"\n```\s*$", "", text)
         payload = json.loads(text)
         payload = _sanitize_lesson_payload(payload)
+        payload["topic"] = backlog_item["topic"]
         return payload
     finally:
         client.threads.delete(thread.id)
 
 
-# Section headings the teacher must not put in the body. If present, we strip
-# them (and everything after the heading) defensively, and salvage any structured
-# data so the renderer can still show the buttons.
+# Keep the existing source-tail cleanup separate from local suggestion recovery.
 _BAD_BODY_SECTIONS = (
     r"sources",
     r"citations",
     r"references",
     r"for\s+more\s+(?:information|info|detailed\s+guidance|details|insights)",
     r"further\s+reading",
-    r"what\s+to\s+learn\s+next(?:\s+suggestions)?",
-    r"suggested\s+next(?:\s+(?:steps|topics))?",
-    r"next\s+steps",
     r"resources",
     r"citing\s+authoritative\s+sources",
 )
 
+_NEXT_BODY_HEADING = re.compile(
+    r"^(?:what\s+to\s+learn\s+next(?:\s+suggestions)?"
+    r"|suggested\s+next(?:\s+(?:steps|topics))?|next\s+steps"
+    r"|что\s+изуч(?:ить|ать)\s+дальше|что\s+изуч(?:ить|ать)\s+далее"
+    r"|следующие\s+шаги|(?:рекомендуемые\s+)?следующие\s+темы"
+    r"|что\s+дальше)[ \t]*[?:]?$",
+    re.IGNORECASE,
+)
+
+
+def _valid_suggestion(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and all(isinstance(value.get(key), str) and value[key].strip()
+                for key in ("title", "topic", "rationale"))
+        and len(value["title"]) <= 200
+        and len(value["topic"]) <= 200
+    )
+
+
+def _json_block_end(text: str, start: int) -> int | None:
+    """Find the entire JSON-shaped block, including malformed/nested examples."""
+    depth, quoted, escaped = 0, False, False
+    for index in range(start, len(text)):
+        char = text[index]
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+        elif char in "]}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def _recover_body_suggestions(body: str) -> tuple[str, list[dict[str, str]]]:
+    lines = body.splitlines(keepends=True)
+    recovered: list[dict[str, str]] = []
+    removed: set[int] = set()
+    heading: int | None = None
+    fence = ""
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+        if fence:
+            if (
+                marker and marker[1][0] == fence[0]
+                and len(marker[1]) >= len(fence)
+                and not line[marker.end():].strip()
+            ):
+                fence = ""
+            index += 1
+            continue
+        if marker:
+            fence = marker[1]
+            heading = None
+            index += 1
+            continue
+        label = re.sub(r"^ {0,3}#{1,6}\s+", "", line).strip()
+        label = label.strip("*: \t")
+        if not line.startswith(("    ", "\t")) and _NEXT_BODY_HEADING.fullmatch(label):
+            heading = index
+            index += 1
+            continue
+        if not line.strip():
+            index += 1
+            continue
+        opener = re.match(r"^ {0,3}(?:[-*+]\s+|\d+[.)]\s+)?(?=[{\[])", line)
+        if not opener:
+            heading = None
+            index += 1
+            continue
+
+        text = "".join(lines[index:])
+        cursor = opener.end()
+        candidates: list[dict[str, str]] = []
+        valid = True
+        while True:
+            end = _json_block_end(text, cursor)
+            if end is None:
+                end = len(text)
+                valid = False
+                break
+            try:
+                value = json.loads(text[cursor:end])
+                items = value if isinstance(value, list) else [value]
+                if not items or not all(_valid_suggestion(item) for item in items):
+                    valid = False
+                else:
+                    candidates.extend(items)
+            except json.JSONDecodeError:
+                valid = False
+            cursor = end
+            while cursor < len(text) and text[cursor] in " \t\r":
+                cursor += 1
+            if cursor < len(text) and text[cursor] == ",":
+                cursor += 1
+                while cursor < len(text) and text[cursor] in " \t\r":
+                    cursor += 1
+                if cursor < len(text) and text[cursor] in "[{":
+                    continue
+            if cursor < len(text) and text[cursor] != "\n":
+                valid = False
+            break
+
+        count = text[:end].count("\n") + (not text[:end].endswith("\n"))
+        if valid:
+            recovered.extend(candidates)
+            removed.update(range(index, index + count))
+            if heading is not None:
+                removed.add(heading)
+        else:
+            heading = None
+        index += count
+    return "".join(line for i, line in enumerate(lines) if i not in removed), recovered
+
 
 def _sanitize_lesson_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Strip 'Sources'/'What to learn next' sections from body and salvage them
-    into structured fields if the agent ignored the instructions."""
+    """Recover next-step JSON locally, then apply the existing source-tail cleanup."""
     body = payload.get("body", "") or ""
     if not isinstance(body, str):
         return payload
+
+    body, recovered = _recover_body_suggestions(body)
+    structured = payload.get("suggested_next")
+    suggestions: dict[str, dict[str, str]] = {}
+    for item in (structured if isinstance(structured, list) else []) + recovered:
+        if _valid_suggestion(item):
+            suggestions.setdefault(item["topic"], item)
+    payload["suggested_next"] = list(suggestions.values())
 
     sections_alt = "|".join(_BAD_BODY_SECTIONS)
     # Match the earliest forbidden section opener. Three accepted forms:
@@ -401,21 +529,6 @@ def _sanitize_lesson_payload(payload: dict[str, Any]) -> dict[str, Any]:
                     deduped.append(u)
             if deduped:
                 payload["citations"] = deduped[:3]
-
-        # Salvage suggested_next JSON objects from the tail.
-        if not payload.get("suggested_next"):
-            obj_pattern = re.compile(
-                r"\{\s*\"title\"\s*:\s*\"[^\"]+\"\s*,\s*\"topic\"\s*:\s*\"[^\"]+\"\s*,\s*\"rationale\"\s*:\s*\"[^\"]+\"\s*\}",
-            )
-            found = obj_pattern.findall(tail)
-            salvaged: list[dict[str, Any]] = []
-            for raw in found:
-                try:
-                    salvaged.append(json.loads(raw))
-                except json.JSONDecodeError:
-                    continue
-            if salvaged:
-                payload["suggested_next"] = salvaged[:3]
 
     payload["body"] = body.strip()
     return payload

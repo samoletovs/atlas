@@ -2,6 +2,7 @@
  * Lightweight API client. SWA forwards browser cookies; auth is automatic.
  */
 import { RECOMMENDATIONS_PATH } from './apiRoutes';
+import { recoverLessonSuggestions } from '../../api/src/shared/lessonSuggestions';
 
 export interface ClientPrincipal {
   userId: string;
@@ -152,13 +153,13 @@ export async function listLessons(
   const res = await fetch(url);
   if (!res.ok) throw new Error(`listLessons failed: ${res.status}`);
   const data = (await res.json()) as { lessons: Lesson[] };
-  return data.lessons;
+  return data.lessons.map(recoverLessonSuggestions);
 }
 
 export async function getLesson(id: string, repoId?: string): Promise<Lesson> {
   const res = await fetch(withRepoId(`/api/lessons/${encodeURIComponent(id)}`, repoId));
   if (!res.ok) throw new Error(`getLesson failed: ${res.status}`);
-  return (await res.json()) as Lesson;
+  return recoverLessonSuggestions((await res.json()) as Lesson);
 }
 
 export type LessonStateAction =
@@ -198,7 +199,7 @@ export async function updateLessonState(
     }
     throw new Error(`updateLessonState failed: ${res.status}${detail}`);
   }
-  return (await res.json()) as Lesson;
+  return recoverLessonSuggestions((await res.json()) as Lesson);
 }
 
 /** Set (or clear, with `null`) the caller's 1–5 star rating for a lesson. */
@@ -235,7 +236,7 @@ export async function queueLesson(input: QueueLessonInput, repoId?: string): Pro
     body: JSON.stringify(input),
   });
   if (!res.ok) throw new Error(`queueLesson failed: ${res.status}`);
-  return (await res.json()) as Lesson;
+  return recoverLessonSuggestions((await res.json()) as Lesson);
 }
 
 /**
@@ -261,7 +262,7 @@ export async function generateLessonNow(
     }
     throw new Error(`generateLessonNow failed: ${res.status}${detail}`);
   }
-  return (await res.json()) as Lesson;
+  return recoverLessonSuggestions((await res.json()) as Lesson);
 }
 
 // ---------- Admin (P2): manage repoShares ----------
@@ -461,7 +462,7 @@ export async function getRecommendations(
   const res = await fetch(url);
   if (!res.ok) throw new Error(`getRecommendations failed: ${res.status}`);
   const data = (await res.json()) as { lessons: LearningPathLesson[] };
-  return data.lessons;
+  return data.lessons.map(recoverLessonSuggestions);
 }
 
 // ---------- GitHub PAT management (Settings page) ----------

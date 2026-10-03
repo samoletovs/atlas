@@ -128,6 +128,7 @@ function endpoint(content, existing = [], options = {}) {
     },
     '../shared/budget.js': budget,
     '../shared/openaiClient.js': openai,
+    '../shared/lessonSuggestions.js': loadShared('lessonSuggestions.ts', {}),
   };
   vm.runInNewContext(options.ask ? askCompiled : compiled, {
     exports, Error,
@@ -155,6 +156,25 @@ test('publishes valid model output exactly once', async () => {
   assert.equal(handler.writes.length, 1);
   assert.equal(handler.writes[0].body, input.body);
   assert.equal(handler.writes[0].status, 'published');
+});
+
+test('keeps the requested hierarchical topic even when the model rewrites it', async () => {
+  const handler = endpoint(JSON.stringify(lesson({ topic: 'azure-functions' })));
+  assert.equal((await handler.run({ topic: 'agent-platforms/azure-functions' })).status, 201);
+  assert.equal(handler.writes[0].topic, 'agent-platforms/azure-functions');
+});
+
+test('publishes Russian next-topic JSON as suggestions instead of inert body text', async () => {
+  const next = [
+    { title: 'Основы Azure Functions', topic: 'agent-platforms/azure-functions', rationale: 'Понимание серверлесс-вычислений поможет в разработке кастомных решений.' },
+    { title: 'Интеграция с Azure Logic Apps', topic: 'agent-platforms/logic-apps', rationale: 'Автоматизация процессов может улучшить эффективность вашего решения.' },
+  ];
+  const handler = endpoint(JSON.stringify(lesson({
+    suggested_next: [], body: `Содержание урока.\n\n## Что изучать дальше\n${next.map(item => JSON.stringify(item)).join(',\n')}`,
+  })));
+  assert.equal((await handler.run({ language: 'ru' })).status, 201);
+  assert.equal(handler.writes[0].body, 'Содержание урока.');
+  assert.deepEqual(JSON.parse(JSON.stringify(handler.writes[0].suggested_next)), next);
 });
 
 for (const heading of ['## Sources', '**REFERENCES**', 'Next steps:']) {
