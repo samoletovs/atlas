@@ -31,6 +31,32 @@ async function assertNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 test.describe('Clearway local learning portal', () => {
+  test('repairs saved Russian suggestion JSON into existing links and on-demand generation', async ({ page, portal }) => {
+    const { recommended, companion } = portal.lessons();
+    const next = [
+      { title: 'Основы Azure Functions', topic: 'agent-platforms/azure-functions', rationale: 'Понимание серверлесс-вычислений поможет в разработке кастомных решений.' },
+      { title: 'Интеграция с Azure Logic Apps', topic: 'agent-platforms/logic-apps', rationale: 'Автоматизация процессов может улучшить эффективность вашего решения.' },
+    ];
+    companion.topic = next[0].topic;
+    recommended.suggested_next = [];
+    recommended.body = `Содержание урока.\n\n## Что изучать дальше\n${next.map(item => JSON.stringify(item)).join(',\n')}`;
+    await portal.goto(`/lesson/${recommended.id}`);
+    const section = main(page).getByRole('region', { name: 'What to learn next' });
+    await expect(main(page)).not.toContainText('"rationale"');
+    const existing = section.getByRole('link', { name: next[0].title });
+    await expect(existing).toHaveAttribute('href', `/lesson/${companion.id}`);
+    await existing.click();
+    await expect(main(page).getByRole('heading', { level: 1 })).toHaveText(companion.title);
+    await portal.goto(`/lesson/${recommended.id}`);
+    const request = page.waitForRequest(req => req.url().includes('/api/lessons/generate') && req.method() === 'POST');
+    await section.getByRole('button', { name: 'Generate this →' }).click();
+    expect((await request).postDataJSON()).toMatchObject({ topic: next[1].topic, title: next[1].title });
+    await expect(main(page).getByRole('heading', { level: 1 })).toHaveText(next[1].title);
+    await portal.goto(`/lesson/${recommended.id}`);
+    await expect(section.getByRole('link', { name: next[1].title })).toBeVisible();
+    await expect(section.getByRole('button', { name: 'Generate this →' })).toHaveCount(0);
+  });
+
   test('promotes the top ready recommendation over published ordering and folds For you into Learn', async ({ page, portal }) => {
     const { recommended, companion, all, queued } = portal.lessons();
     if (!recommended.source_event) throw new Error('The primary recommendation fixture needs its own source event.');

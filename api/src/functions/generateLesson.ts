@@ -22,6 +22,7 @@ import { resolveRequest, isHttpResponse, requireOwner } from '../shared/auth.js'
 import { checkQuota } from '../shared/quota.js';
 import { BudgetReservationError, checkBudget, recordEstimatedCost } from '../shared/budget.js';
 import { completionOptions, estimateInputTokens, getOpenAIClientForUser, TextMessage } from '../shared/openaiClient.js';
+import { recoverLessonSuggestions } from '../shared/lessonSuggestions.js';
 
 const GENERATE_MAX_TOKENS = 1024;
 const DEEP_LESSON_MAX_TOKENS = 4096;
@@ -271,7 +272,7 @@ async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string)
   }
   const text = completion.choices[0]?.message?.content ?? '';
   if (!text) throw new Error('Model returned empty response');
-  const parsed = sanitizeGeneratedLesson(parseModelJson(text));
+  const parsed = sanitizeGeneratedLesson(recoverLessonSuggestions(parseModelJson(text)));
   if (
     typeof parsed.title !== 'string' || !parsed.title.trim() ||
     typeof parsed.body !== 'string' || !parsed.body.trim()
@@ -371,7 +372,7 @@ export async function generateLesson(
     repoId,
     ownerId: ownerLogin,
     title: generated.title,
-    topic: generated.topic || topic,
+    topic,
     depth: generated.depth || body.depth || 'intro',
     read_minutes: Number.isFinite(generated.read_minutes) ? generated.read_minutes : 4,
     body: generated.body,

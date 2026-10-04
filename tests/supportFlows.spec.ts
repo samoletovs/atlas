@@ -45,6 +45,7 @@ async function mock(page: Page, handler?: (route: Route, url: URL) => Promise<bo
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.origin !== origin.origin) return route.abort('blockedbyclient');
+    if (url.pathname === '/api/src/shared/lessonSuggestions.ts') return route.continue();
     if (url.pathname === '/.auth/me' || url.pathname.startsWith('/api/')) {
       requests.push(url);
       if (await handler?.(route, url)) return;
