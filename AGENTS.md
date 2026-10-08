@@ -11,12 +11,13 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - **Database:** Cosmos DB (NoSQL) — containers: `lessons`, `topics`, `activity_events`
 - **Models:** prepared selective pilot on `foundrylab-aiservices`: routine API
   `gpt-6-luna`, explicitly deep lessons `gpt-6-sol` (both v2026-09-22).
-  Classic scheduled agents stay on `gpt-4o-mini` until separately verified.
+  Scheduled Foundry agents stay on `gpt-4o-mini` until separately verified.
 - **Auth:** GitHub OAuth via Static Web Apps built-in auth. Identity =
   GitHub handle; user docs are partitioned by `userId = login.toLowerCase()`.
   See [`docs/AUTH-GOOGLE.md`](docs/AUTH-GOOGLE.md) for the (deprecated)
   Google path; production uses GitHub.
-- **Lesson generation script:** Python 3.11, uses `azure-ai-agents` + `azure-cosmos` SDK
+- **Lesson generation script:** Python 3.11, uses `azure-ai-projects` 2.x (new Foundry
+  Agent Service: prompt-agent versions + Responses API) + `azure-cosmos` SDK
 - **IaC:** Bicep
 - **Region:** `swedencentral` (parallels foundryLab)
 
@@ -60,7 +61,7 @@ unverified aliases and conflicting `*_MODEL` assertions fail before inference
 or premium admission. Deep lessons retain the 24,000-byte input-reservation
 bound; routine chat uses its existing character limits, including Russian.
 See [README.md](README.md#model-pilot) for shadowing settings, rollback,
-persistent classic agents and the separate triage auth blocker.
+versioned scheduled agents and the separate triage auth blocker.
 
 ## Skills to invoke when working here
 

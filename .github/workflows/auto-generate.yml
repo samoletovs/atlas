@@ -54,7 +54,7 @@ jobs:
           COSMOS_DATABASE: ${{ vars.COSMOS_DATABASE }}
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
           FOUNDRY_DEPLOYMENT: ${{ vars.FOUNDRY_DEPLOYMENT }}
-          # Classic Agent Service has not passed the GPT-6 compatibility gate.
+          # Scheduled Foundry agents have not passed the GPT-6 compatibility gate.
           FOUNDRY_AGENT_DEPLOYMENT: ${{ vars.FOUNDRY_AGENT_DEPLOYMENT || 'gpt-4o-mini' }}
           ATLAS_OWNER_LOGIN: ${{ vars.ATLAS_OWNER_LOGIN }}
           # Optional. If present, raises GitHub anonymous rate-limit (60/h)

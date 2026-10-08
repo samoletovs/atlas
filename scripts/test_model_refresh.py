@@ -1,10 +1,11 @@
-"""Classic-agent isolation tests; no credential discovery or Azure requests."""
+"""Scheduled-agent isolation tests; no credential discovery or Azure requests."""
 
 import json
 import os
 import runpy
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 
@@ -19,31 +20,31 @@ class GeneratorTests(unittest.TestCase):
             return runpy.run_path(str(Path(__file__).with_name("generate_lessons.py")))
 
 
-class ClassicModelBoundaryTests(GeneratorTests):
-    def test_api_default_cannot_silently_upgrade_the_classic_agents(self) -> None:
+class ScheduledAgentModelBoundaryTests(GeneratorTests):
+    def test_api_default_cannot_silently_upgrade_the_scheduled_agents(self) -> None:
         for model in ("gpt-6-luna", "gpt-6-sol"):
             module = self.load(FOUNDRY_DEPLOYMENT=model)
             client = Mock()
             with (
-                patch.dict(module["make_agents_client"].__globals__, AgentsClient=client),
+                patch.dict(module["make_agents_client"].__globals__, AIProjectClient=client),
                 self.assertRaisesRegex(ValueError, "separate promotion gate"),
             ):
                 module["make_agents_client"]()
             client.assert_not_called()
 
-    def test_explicit_classic_rollback_overrides_the_api_model(self) -> None:
+    def test_explicit_rollback_overrides_the_api_model(self) -> None:
         for model in ("gpt-4o-mini", "gpt-4.1"):
             module = self.load(FOUNDRY_DEPLOYMENT="gpt-6-luna", FOUNDRY_AGENT_DEPLOYMENT=model)
             self.assertEqual(module["FOUNDRY_DEPLOYMENT"], model)
             client, credential = Mock(), Mock()
             with patch.dict(
                 module["make_agents_client"].__globals__,
-                AgentsClient=client, DefaultAzureCredential=credential,
+                AIProjectClient=client, DefaultAzureCredential=credential,
             ):
                 module["make_agents_client"]()
             client.assert_called_once()
 
-    def test_workflow_keeps_classic_agents_on_the_supported_rollback(self) -> None:
+    def test_workflow_keeps_scheduled_agents_on_the_supported_rollback(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github" / "workflows" / "auto-generate.yml"
         ).read_text(encoding="utf-8")
@@ -175,18 +176,18 @@ class SuggestionRecoveryTests(GeneratorTests):
         self.assertEqual(result["suggested_next"], self.suggestions)
 
     def test_generation_preserves_requested_topic_over_model_output(self) -> None:
-        client = Mock()
-        client.runs.create_and_process.return_value.status = "completed"
-        client.messages.list.return_value = [
-            Mock(role=self.module["MessageRole"].AGENT, text_messages=[
-                Mock(text=Mock(value=json.dumps({"body": "Lesson.", "topic": "model-changed"}))),
-            ]),
-        ]
+        openai = Mock()
+        openai.responses.create.return_value = SimpleNamespace(
+            id="resp_1", status="completed", error=None, incomplete_details=None,
+            output_text=json.dumps({"body": "Lesson.", "topic": "model-changed"}),
+        )
+        client = self.module["FoundryAgents"](project=Mock(), _openai=openai)
+        agent = self.module["AgentRef"](name="atlas-teacher", version="3")
         payload = self.module["generate_lesson"](
-            client, "agent", {"topic": "agent-platforms/logic-apps", "depth": "intro"},
+            client, agent, {"topic": "agent-platforms/logic-apps", "depth": "intro"},
         )
         self.assertEqual(payload["topic"], "agent-platforms/logic-apps")
-        client.threads.delete.assert_called_once()
+        self.assertIs(openai.responses.create.call_args.kwargs["store"], False)
         cosmos = Mock()
         queued = {
             "id": "queued-lesson", "topic": "agent-platforms/logic-apps",
@@ -197,7 +198,7 @@ class SuggestionRecoveryTests(GeneratorTests):
             get_cosmos_client=Mock(return_value=cosmos),
             fetch_pending_lessons=Mock(return_value=[queued]),
             make_agents_client=Mock(return_value=client),
-            get_or_create_atlas_agent=Mock(return_value="agent"),
+            get_or_create_atlas_agent=Mock(return_value=agent),
         ):
             self.assertEqual(self.module["run_pending"](), 0)
         stored = cosmos.get_database_client.return_value.get_container_client.return_value

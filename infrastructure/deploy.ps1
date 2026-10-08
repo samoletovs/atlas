@@ -112,7 +112,7 @@ $lines = @(
   "FOUNDRY_LESSON_MODEL=gpt-6-sol"
   "FOUNDRY_API_VERSION=2024-10-21"
   "ATLAS_SOL_DAILY_BUDGET_USD=0.10"
-  "# Classic agents remain on the supported rollback until separately evaluated"
+  "# Scheduled agents remain on the supported rollback until separately evaluated"
   "FOUNDRY_AGENT_DEPLOYMENT=gpt-4o-mini"
   ""
   "ATLAS_USER_ID=sam"
