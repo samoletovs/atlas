@@ -193,19 +193,31 @@ Legacy models receive `max_tokens` and temperature, without reasoning knobs.
 ### Scheduled agents are separate
 
 [auto-generate.yml](.github/workflows/auto-generate.yml), job `generate`,
-runs [generate_lessons.py](scripts/generate_lessons.py) against the classic
-Foundry project endpoint. `FOUNDRY_AGENT_DEPLOYMENT` is deliberately pinned to
-`gpt-4o-mini` by default and takes precedence over legacy `FOUNDRY_DEPLOYMENT`.
-The existing persistent names are `atlas-teacher`, `atlas-planner` and
-`atlas-enhancer`; teacher/planner are updated on reuse and enhancer recreated.
-None was updated by this preparation.
+runs [generate_lessons.py](scripts/generate_lessons.py) against the Foundry
+project endpoint using the **new Foundry Agent Service** (`azure-ai-projects`
+2.x). The classic Agents API (`azure-ai-agents`, threads/runs, `asst_` ids)
+retires on 31 March 2027 and is no longer used.
+`FOUNDRY_AGENT_DEPLOYMENT` is deliberately pinned to `gpt-4o-mini` by default
+and takes precedence over legacy `FOUNDRY_DEPLOYMENT`.
 
-Classic `azure-ai-agents` 1.1 create/run signatures have no declared
-`reasoning_effort`; this script also lacks the API's daily dollar guard.
-It therefore refuses GPT-6 before opening a client. **Do not promote all
-three agents by changing the shared repository variable.** A separately
-budgeted, synthetic classic-service gate is needed before that path can use
-GPT-6. Keep `FOUNDRY_AGENT_DEPLOYMENT=gpt-4o-mini` (or `gpt-4.1` rollback).
+The prompt agents are `atlas-teacher` (temperature 0.4), `atlas-planner` (0.5)
+and `atlas-enhancer` (0.2; its instructions embed the known-topic list). Each
+run compares model, instructions and temperature with the latest stored
+version and calls `agents.create_version` **only when they differ**, so
+scheduled runs do not accumulate versions. Every call is a single-shot
+Responses request (`store=False`, no conversation) carrying an
+`agent_reference` pinned to that exact name **and version**. A response whose
+status is not `completed`, or whose text is empty, raises and is never parsed
+or published.
+
+The script still lacks the API's daily dollar guard and has no reviewed
+reasoning settings, so it refuses GPT-6 before opening a client. **Do not
+promote all three agents by changing the shared repository variable.** A
+separately budgeted, synthetic gate is needed before that path can use GPT-6.
+Keep `FOUNDRY_AGENT_DEPLOYMENT=gpt-4o-mini` (or `gpt-4.1` rollback). If the
+first scheduled run after the migration returns 401/403 on `agents` or
+`/openai/v1/responses`, check the CI identity's Foundry project role
+(**Azure AI User** covers agent versions and responses).
 
 Production API code ships through
 [azure-static-web-apps.yml](.github/workflows/azure-static-web-apps.yml), job
@@ -223,7 +235,7 @@ with legacy parameters; nano overrides are rejected. Incomplete/refused output r
 review rather than assigning work.
 
 The workflow still uses the existing endpoint and API-key secrets, not the
-SWA credential or classic-agent identity. Parent reports Luna provisioned on
+SWA credential or scheduled-agent identity. Parent reports Luna provisioned on
 both accounts and the synthetic candidate gate passed (2026-10-02). The
 workflow must still target the verified key-compatible account, not MI-only
 foundryLab. Clear any retired nano `TRIAGE_DEPLOYMENT` variable or set Luna

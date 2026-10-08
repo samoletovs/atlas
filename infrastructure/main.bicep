@@ -26,7 +26,7 @@ param foundryDeployment string = 'gpt-6-luna'
 @allowed(['gpt-6-luna', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryModel string = foundryDeployment
 
-@description('API deep-lesson deployment only; not the scheduled classic Foundry agents.')
+@description('API deep-lesson deployment only; not the scheduled Foundry agents.')
 @allowed(['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'])
 param foundryLessonDeployment string = 'gpt-6-sol'
 

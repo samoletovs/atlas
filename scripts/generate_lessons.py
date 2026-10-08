@@ -18,17 +18,19 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from azure.ai.agents import AgentsClient
-from azure.ai.agents.models import ListSortOrder, MessageRole
+from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import PromptAgentDefinition
+from azure.core.exceptions import ResourceNotFoundError
 from azure.cosmos import CosmosClient, exceptions
 from azure.identity import DefaultAzureCredential
 from dotenv import load_dotenv
@@ -227,74 +229,141 @@ Output ONLY the JSON. No prose. No markdown fences. Plain JSON.
 """
 
 
-def make_agents_client() -> AgentsClient:
+@dataclass
+class FoundryAgents:
+    """Foundry Agent Service (new API) project client plus its Responses client."""
+
+    project: AIProjectClient
+    _openai: Any = field(default=None, repr=False)
+
+    @property
+    def openai(self) -> Any:
+        if self._openai is None:
+            self._openai = self.project.get_openai_client()
+        return self._openai
+
+
+@dataclass(frozen=True)
+class AgentRef:
+    """A pinned prompt-agent version, sent as `agent_reference` on every response."""
+
+    name: str
+    version: str
+
+    def to_reference(self) -> dict[str, str]:
+        return {"name": self.name, "version": self.version, "type": "agent_reference"}
+
+
+def make_agents_client() -> FoundryAgents:
     if FOUNDRY_DEPLOYMENT not in {"gpt-4o-mini", "gpt-4.1"}:
         raise ValueError(
-            "Classic atlas agents remain on gpt-4o-mini/gpt-4.1: GPT-6 reasoning "
+            "Scheduled atlas agents remain on gpt-4o-mini/gpt-4.1: GPT-6 reasoning "
             "controls and model support need a separate promotion gate. "
             "Set FOUNDRY_AGENT_DEPLOYMENT; the API's selective Sol path is independent."
         )
-    return AgentsClient(
-        endpoint=FOUNDRY_PROJECT_ENDPOINT,
-        credential=DefaultAzureCredential(),
+    return FoundryAgents(
+        project=AIProjectClient(
+            endpoint=FOUNDRY_PROJECT_ENDPOINT,
+            credential=DefaultAzureCredential(),
+        ),
     )
 
 
-def get_or_create_atlas_agent(client: AgentsClient) -> str:
-    """Return the agent_id for the atlas-teacher agent. Create if not exists."""
-    name = "atlas-teacher"
-    for agent in client.list_agents():
-        if agent.name == name:
-            log.info("Found existing agent %s (%s)", name, agent.id)
-            # Update instructions in case they evolved
-            client.update_agent(
-                agent_id=agent.id,
-                model=FOUNDRY_DEPLOYMENT,
-                instructions=LIBRARIAN_INSTRUCTIONS,
-                temperature=0.4,  # slightly creative for lesson writing
-            )
-            return agent.id
-    log.info("Creating agent %s", name)
-    agent = client.create_agent(
-        model=FOUNDRY_DEPLOYMENT,
-        name=name,
-        instructions=LIBRARIAN_INSTRUCTIONS,
-        temperature=0.4,
-    )
-    return agent.id
+def _definition_matches(existing: Any, wanted: PromptAgentDefinition) -> bool:
+    """True when the latest stored version already carries `wanted`."""
+    if existing is None or getattr(existing, "kind", None) != "prompt":
+        return False
+    if getattr(existing, "model", None) != wanted.model:
+        return False
+    if (getattr(existing, "instructions", None) or "") != (wanted.instructions or ""):
+        return False
+    if getattr(existing, "tools", None):
+        return False
+    have, want = getattr(existing, "temperature", None), wanted.temperature
+    if have is None or want is None:
+        return have is want
+    return math.isclose(float(have), float(want), abs_tol=1e-9)
 
 
-def get_or_create_enhancer_agent(client: AgentsClient, known_topics: list[str]) -> str:
-    """Return agent_id for atlas-enhancer; bake the known-topics list into instructions.
+def _ensure_agent_version(
+    client: FoundryAgents,
+    name: str,
+    instructions: str,
+    temperature: float,
+) -> AgentRef:
+    """Return the agent version to pin, creating one only when the definition changed.
 
-    Recreates the agent each run so instruction changes always take effect — the
-    Foundry update path can be sticky.
+    Agent versions are immutable, so re-running with unchanged instructions reuses
+    the latest version instead of adding a new one on every scheduled run.
     """
-    name = "atlas-enhancer"
+    definition = PromptAgentDefinition(
+        model=FOUNDRY_DEPLOYMENT,
+        instructions=instructions,
+        temperature=temperature,
+    )
+    try:
+        latest = client.project.agents.get(name).versions.latest
+    except ResourceNotFoundError:
+        latest = None
+    if latest is not None and _definition_matches(latest.definition, definition):
+        log.info("Reusing agent %s version %s", name, latest.version)
+        return AgentRef(name=name, version=str(latest.version))
+    log.info("Creating agent %s new version (definition changed or agent missing)", name)
+    created = client.project.agents.create_version(
+        agent_name=name,
+        definition=definition,
+        description=f"atlas {name} - managed by scripts/generate_lessons.py",
+    )
+    log.info("Created agent %s version %s", name, created.version)
+    return AgentRef(name=name, version=str(created.version))
+
+
+def _invoke_agent(client: FoundryAgents, agent: AgentRef, user_prompt: str, what: str) -> str:
+    """Single-shot Responses call against a pinned agent version; returns its text.
+
+    A failed, cancelled or incomplete response raises — it is never parsed as output.
+    `store=False` mirrors the old per-run thread deletion: nothing persists server-side.
+    """
+    response = client.openai.responses.create(
+        input=user_prompt,
+        store=False,
+        extra_body={"agent_reference": agent.to_reference()},
+    )
+    status = getattr(response, "status", None)
+    if status != "completed":
+        detail = getattr(response, "error", None) or getattr(response, "incomplete_details", None)
+        raise RuntimeError(f"{what} failed: status={status} {detail}")
+    text = (getattr(response, "output_text", None) or "").strip()
+    if not text:
+        raise RuntimeError(f"{what} failed: empty output (response {getattr(response, 'id', '?')})")
+    # Strip code-fences if model added them despite instructions
+    text = re.sub(r"^```(?:json)?\s*\n", "", text)
+    text = re.sub(r"\n```\s*$", "", text)
+    return text
+
+
+def get_or_create_atlas_agent(client: FoundryAgents) -> AgentRef:
+    """Return the pinned atlas-teacher version, creating a version only on change."""
+    # slightly creative for lesson writing
+    return _ensure_agent_version(client, "atlas-teacher", LIBRARIAN_INSTRUCTIONS, 0.4)
+
+
+def get_or_create_enhancer_agent(client: FoundryAgents, known_topics: list[str]) -> AgentRef:
+    """Return the pinned atlas-enhancer version; bake the known-topics list into instructions.
+
+    The known-topics list is part of the instructions, so a new version is created
+    whenever the topic set changes and reused otherwise.
+    """
     instructions = ENHANCER_INSTRUCTIONS.replace(
         "%KNOWN_TOPICS%",
         "\n".join(f"   - {t}" for t in sorted(set(known_topics))) or "   (none yet)",
     )
-    for agent in client.list_agents():
-        if agent.name == name:
-            log.info("Removing stale agent %s (%s) for fresh recreate", name, agent.id)
-            try:
-                client.delete_agent(agent.id)
-            except Exception as exc:  # noqa: BLE001
-                log.warning("  could not delete: %s", exc)
-    log.info("Creating agent %s", name)
-    agent = client.create_agent(
-        model=FOUNDRY_DEPLOYMENT,
-        name=name,
-        instructions=instructions,
-        temperature=0.2,
-    )
-    return agent.id
+    return _ensure_agent_version(client, "atlas-enhancer", instructions, 0.2)
 
 
 def generate_lesson(
-    client: AgentsClient,
-    agent_id: str,
+    client: FoundryAgents,
+    agent: AgentRef,
     backlog_item: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the agent to generate a lesson body for one backlog item.
@@ -312,37 +381,11 @@ def generate_lesson(
         indent=2,
     )
 
-    thread = client.threads.create()
-    try:
-        client.messages.create(
-            thread_id=thread.id,
-            role=MessageRole.USER,
-            content=user_prompt,
-        )
-        run = client.runs.create_and_process(
-            thread_id=thread.id,
-            agent_id=agent_id,
-        )
-        if str(run.status) != "RunStatus.COMPLETED" and run.status != "completed":
-            raise RuntimeError(f"Run failed: {getattr(run, 'last_error', None)}")
-
-        msgs = list(
-            client.messages.list(
-                thread_id=thread.id,
-                order=ListSortOrder.ASCENDING,
-            ),
-        )
-        agent_msg = next(m for m in reversed(msgs) if m.role == MessageRole.AGENT)
-        text = "\n".join(t.text.value for t in agent_msg.text_messages).strip()
-        # Strip code-fences if model added them despite instructions
-        text = re.sub(r"^```(?:json)?\s*\n", "", text)
-        text = re.sub(r"\n```\s*$", "", text)
-        payload = json.loads(text)
-        payload = _sanitize_lesson_payload(payload)
-        payload["topic"] = backlog_item["topic"]
-        return payload
-    finally:
-        client.threads.delete(thread.id)
+    text = _invoke_agent(client, agent, user_prompt, "Run")
+    payload = json.loads(text)
+    payload = _sanitize_lesson_payload(payload)
+    payload["topic"] = backlog_item["topic"]
+    return payload
 
 
 # Keep the existing source-tail cleanup separate from local suggestion recovery.
@@ -935,8 +978,8 @@ def run_seed(languages: list[str] | None = None) -> None:
     log.info("Mode: SEED — generating %d topics × %d language(s)", len(SEED_BACKLOG), len(languages))
     cosmos = get_cosmos_client()
     agents = make_agents_client()
-    agent_id = get_or_create_atlas_agent(agents)
-    log.info("Agent: %s", agent_id)
+    agent = get_or_create_atlas_agent(agents)
+    log.info("Agent: %s", agent)
 
     existing = existing_lesson_topics(cosmos)
     log.info("Already covered: %d topic+depth+lang triples", len(existing))
@@ -964,7 +1007,7 @@ def run_seed(languages: list[str] | None = None) -> None:
 
             item_with_lang = {**item, "context_notes": lang_context}
             try:
-                payload = generate_lesson(agents, agent_id, item_with_lang)
+                payload = generate_lesson(agents, agent, item_with_lang)
             except Exception as exc:  # noqa: BLE001
                 log.error("  FAIL %s [%s]: %s", item["topic"], lang, exc)
                 continue
@@ -1027,7 +1070,7 @@ def run_pending() -> int:
 
     log.info("Mode: PENDING — draining %d queued lesson(s).", len(pending))
     agents = make_agents_client()
-    agent_id = get_or_create_atlas_agent(agents)
+    agent = get_or_create_atlas_agent(agents)
     container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons_v2")
 
     generated = 0
@@ -1066,7 +1109,7 @@ def run_pending() -> int:
         }
 
         try:
-            payload = generate_lesson(agents, agent_id, backlog_item)
+            payload = generate_lesson(agents, agent, backlog_item)
         except Exception as exc:  # noqa: BLE001
             log.error("  FAIL %s [%s]: %s", topic, lang, exc)
             continue
@@ -1097,8 +1140,8 @@ def run_pending() -> int:
 # --- Enhance mode (backfill existing lessons with bold/callouts/links) ------
 
 def enhance_lesson_body(
-    client: AgentsClient,
-    agent_id: str,
+    client: FoundryAgents,
+    agent: AgentRef,
     doc: dict[str, Any],
     source_body: str,
     extra_hint: str | None = None,
@@ -1121,37 +1164,11 @@ def enhance_lesson_body(
     if extra_hint:
         user_prompt = f"{user_prompt}\n\nADDITIONAL INSTRUCTION: {extra_hint}"
 
-    thread = client.threads.create()
-    try:
-        client.messages.create(
-            thread_id=thread.id,
-            role=MessageRole.USER,
-            content=user_prompt,
-        )
-        run = client.runs.create_and_process(
-            thread_id=thread.id,
-            agent_id=agent_id,
-        )
-        if str(run.status) != "RunStatus.COMPLETED" and run.status != "completed":
-            raise RuntimeError(f"Run failed: {getattr(run, 'last_error', None)}")
-
-        msgs = list(
-            client.messages.list(
-                thread_id=thread.id,
-                order=ListSortOrder.ASCENDING,
-            ),
-        )
-        agent_msg = next(m for m in reversed(msgs) if m.role == MessageRole.AGENT)
-        text = "\n".join(t.text.value for t in agent_msg.text_messages).strip()
-        # Strip code-fences if model added them despite instructions
-        text = re.sub(r"^```(?:json)?\s*\n", "", text)
-        text = re.sub(r"\n```\s*$", "", text)
-        result = json.loads(text)
-        if "body" not in result or not isinstance(result["body"], str):
-            raise RuntimeError("Enhancer returned no 'body' field")
-        return result["body"]
-    finally:
-        client.threads.delete(thread.id)
+    text = _invoke_agent(client, agent, user_prompt, "Run")
+    result = json.loads(text)
+    if "body" not in result or not isinstance(result["body"], str):
+        raise RuntimeError("Enhancer returned no 'body' field")
+    return result["body"]
 
 
 def _count_topic_links(body: str) -> int:
@@ -1198,7 +1215,7 @@ def run_enhance(force: bool = False, dry_run: bool = False, limit: int | None = 
     agents = make_agents_client()
     known = known_topic_slugs(lessons)
     log.info("Cross-link vocabulary: %d known slug(s)", len(known))
-    agent_id = get_or_create_enhancer_agent(agents, known)
+    agent = get_or_create_enhancer_agent(agents, known)
     container = cosmos.get_database_client(COSMOS_DATABASE).get_container_client("lessons")
 
     enhanced = 0
@@ -1216,7 +1233,7 @@ def run_enhance(force: bool = False, dry_run: bool = False, limit: int | None = 
         old_len = len(doc.get("body", ""))
 
         try:
-            new_body = enhance_lesson_body(agents, agent_id, doc, source_body)
+            new_body = enhance_lesson_body(agents, agent, doc, source_body)
         except Exception as exc:  # noqa: BLE001
             log.error("  FAIL %s [%s]: %s", topic, lang, exc)
             failed += 1
@@ -1228,7 +1245,7 @@ def run_enhance(force: bool = False, dry_run: bool = False, limit: int | None = 
             time.sleep(4)
             try:
                 new_body = enhance_lesson_body(
-                    agents, agent_id, doc, source_body,
+                    agents, agent, doc, source_body,
                     extra_hint=(
                         "Your previous output had ZERO topic: links. This is unacceptable. "
                         "You MUST insert at least 3 [term](topic:slug) cross-links inline. "
@@ -1332,34 +1349,9 @@ Output exactly N items in the `items` array. No prose around the JSON. No markdo
 """
 
 
-def _get_or_create_planner_agent(client: AgentsClient) -> str:
-    """Return the agent_id for atlas-planner. Recreates on each run to keep instructions fresh."""
-    name = "atlas-planner"
-    for agent in client.list_agents():
-        if agent.name == name:
-            try:
-                client.update_agent(
-                    agent_id=agent.id,
-                    model=FOUNDRY_DEPLOYMENT,
-                    instructions=PLANNER_INSTRUCTIONS,
-                    temperature=0.5,
-                )
-                log.info("Reusing planner agent %s", agent.id)
-                return agent.id
-            except Exception:  # noqa: BLE001
-                try:
-                    client.delete_agent(agent.id)
-                except Exception:  # noqa: BLE001
-                    pass
-                break
-    log.info("Creating atlas-planner agent")
-    agent = client.create_agent(
-        model=FOUNDRY_DEPLOYMENT,
-        name=name,
-        instructions=PLANNER_INSTRUCTIONS,
-        temperature=0.5,
-    )
-    return agent.id
+def _get_or_create_planner_agent(client: FoundryAgents) -> AgentRef:
+    """Return the pinned atlas-planner version, creating a version only on change."""
+    return _ensure_agent_version(client, "atlas-planner", PLANNER_INSTRUCTIONS, 0.5)
 
 
 def _fetch_auto_repos(cosmos: CosmosClient) -> list[dict[str, Any]]:
@@ -1516,8 +1508,8 @@ def _fetch_readme(owner: str, repo_name: str) -> str:
 
 
 def _run_planner(
-    client: AgentsClient,
-    agent_id: str,
+    client: FoundryAgents,
+    agent: AgentRef,
     repo_doc: dict[str, Any],
     commits: list[dict[str, Any]],
     readme_excerpt: str,
@@ -1546,32 +1538,8 @@ def _run_planner(
             "Topic slugs stay in English."
         )
 
-    thread = client.threads.create()
-    try:
-        client.messages.create(
-            thread_id=thread.id,
-            role=MessageRole.USER,
-            content=user_prompt,
-        )
-        run = client.runs.create_and_process(
-            thread_id=thread.id,
-            agent_id=agent_id,
-        )
-        if str(run.status) != "RunStatus.COMPLETED" and run.status != "completed":
-            raise RuntimeError(f"Planner run failed: {getattr(run, 'last_error', None)}")
-        msgs = list(
-            client.messages.list(
-                thread_id=thread.id,
-                order=ListSortOrder.ASCENDING,
-            ),
-        )
-        agent_msg = next(m for m in reversed(msgs) if m.role == MessageRole.AGENT)
-        text = "\n".join(t.text.value for t in agent_msg.text_messages).strip()
-        text = re.sub(r"^```(?:json)?\s*\n", "", text)
-        text = re.sub(r"\n```\s*$", "", text)
-        result = json.loads(text)
-    finally:
-        client.threads.delete(thread.id)
+    text = _invoke_agent(client, agent, user_prompt, "Planner run")
+    result = json.loads(text)
 
     items = result.get("items") if isinstance(result, dict) else None
     if not isinstance(items, list):
@@ -1692,8 +1660,8 @@ def run_auto() -> int:
 
     now = datetime.now(timezone.utc)
     queued_this_run = 0
-    planner_agent_id: str | None = None
-    agents: AgentsClient | None = None
+    planner_agent: AgentRef | None = None
+    agents: FoundryAgents | None = None
 
     for repo_doc in repos:
         repo_id = repo_doc.get("repoId") or repo_doc.get("id") or ""
@@ -1750,13 +1718,13 @@ def run_auto() -> int:
 
         if agents is None:
             agents = make_agents_client()
-        if planner_agent_id is None:
-            planner_agent_id = _get_or_create_planner_agent(agents)
+        if planner_agent is None:
+            planner_agent = _get_or_create_planner_agent(agents)
 
         try:
             proposals = _run_planner(
                 agents,
-                planner_agent_id,
+                planner_agent,
                 repo_doc,
                 commits,
                 readme,
