@@ -183,8 +183,8 @@ class ClassicSdkRemovedTests(unittest.TestCase):
             line.split("#")[0].strip()
             for line in (SCRIPTS / "requirements.txt").read_text(encoding="utf-8").splitlines()
         ]
-        self.assertIn("azure-ai-projects>=2.1.0,<3", requirements)
-        self.assertIn("openai>=2.0", requirements)
+        self.assertIn("azure-ai-projects>=2.1.0,<2.5", requirements)
+        self.assertIn("openai>=2.8.0,<3", requirements)
         self.assertFalse([r for r in requirements if r.lower().startswith("azure-ai-agents")])
 
     def test_no_script_or_workflow_references_the_classic_sdk(self) -> None:
