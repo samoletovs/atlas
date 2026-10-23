@@ -57,6 +57,29 @@ test.describe('Clearway local learning portal', () => {
     await expect(section.getByRole('button', { name: 'Generate this →' })).toHaveCount(0);
   });
 
+  test('generates and links a lesson grounded in an uploaded document', async ({ page, portal }) => {
+    await portal.goto();
+    const form = main(page).getByRole('region', { name: 'Create a lesson' });
+    await form.getByLabel('Lesson title').fill('Uploaded design notes');
+    await form.getByRole('textbox', { name: 'Topic', exact: true }).fill('uploaded-design-notes');
+    await form.getByLabel('Document (.txt or .md, up to 16 KB)').setInputFiles({
+      name: 'design-notes.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('Use small modules to keep system changes understandable.'),
+    });
+    const request = page.waitForRequest(req => req.url().includes('/api/lessons/generate') && req.method() === 'POST');
+    await form.getByRole('button', { name: 'Generate lesson', exact: true }).click();
+    const body = (await request).postDataJSON();
+    expect(body).toMatchObject({
+      title: 'Uploaded design notes',
+      topic: 'uploaded-design-notes',
+      source_type: 'document',
+      source_name: 'design-notes.md',
+      source_context: 'Use small modules to keep system changes understandable.',
+    });
+    await expect(form.getByRole('status').getByRole('link', { name: 'Uploaded design notes' })).toBeVisible();
+  });
+
   test('promotes the top ready recommendation over published ordering and folds For you into Learn', async ({ page, portal }) => {
     const { recommended, companion, all, queued } = portal.lessons();
     if (!recommended.source_event) throw new Error('The primary recommendation fixture needs its own source event.');

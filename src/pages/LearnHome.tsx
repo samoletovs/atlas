@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useLang, useRepo } from '../App';
+import { LessonSourceForm } from '../components/LessonSourceForm';
 import { LessonMeta } from '../components/LessonMeta';
 import {
   generateLessonNow,
@@ -244,6 +245,7 @@ function LearnHomeContent({
 
   return (
     <div className="learn-home">
+      <LessonSourceForm lang={lang} repoId={repoId} role={role} />
       {lead ? (
         <>
           <header className="learn-direction" aria-labelledby="learn-title">

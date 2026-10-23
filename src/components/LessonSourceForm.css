@@ -1,0 +1,59 @@
+.lesson-source-form {
+  max-width: 960px;
+  margin: clamp(1.5rem, 4vw, 3rem) 0;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+}
+
+.lesson-source-form h2 {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+
+.lesson-source-form form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.lesson-source-form label {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--fg-muted);
+}
+
+.lesson-source-form :is(input, select, button) {
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.lesson-source-form button {
+  background: var(--fg);
+  color: var(--bg);
+  cursor: pointer;
+}
+
+.lesson-source-form button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.lesson-source-form :where(input, select, button, a):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.lesson-source-error {
+  color: var(--error);
+}
+
+.lesson-source-success {
+  margin-bottom: 0;
+}

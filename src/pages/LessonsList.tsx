@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLang, useRepo } from '../App';
+import { LessonSourceForm } from '../components/LessonSourceForm';
 import { LessonMeta } from '../components/LessonMeta';
 import { listLessons, type Lesson } from '../lib/api';
 import { useLessonProgressVersion } from '../lib/lessonProgress';
@@ -13,15 +14,19 @@ interface Props {
 
 export function LessonsList({ status }: Props) {
   const { lang } = useLang();
-  const { repoId } = useRepo();
-  if (status === 'published') return <LearnHome />;
+  const { repoId, role } = useRepo();
   return (
-    <Collection
-      key={JSON.stringify([status, lang, repoId])}
-      status={status}
-      lang={lang}
-      repoId={repoId}
-    />
+    <>
+      {status !== 'published' && <LessonSourceForm lang={lang} repoId={repoId} role={role} />}
+      {status === 'published' ? <LearnHome /> : (
+        <Collection
+          key={JSON.stringify([status, lang, repoId])}
+          status={status}
+          lang={lang}
+          repoId={repoId}
+        />
+      )}
+    </>
   );
 }
 
