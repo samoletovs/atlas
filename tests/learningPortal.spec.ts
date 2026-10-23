@@ -68,7 +68,7 @@ test.describe('Clearway local learning portal', () => {
       buffer: Buffer.from('Use small modules to keep system changes understandable.'),
     });
     const request = page.waitForRequest(req => req.url().includes('/api/lessons/generate') && req.method() === 'POST');
-    await form.getByRole('button', { name: 'Generate lesson', exact: true }).click();
+    await form.getByRole('button', { name: 'Create from source', exact: true }).click();
     const body = (await request).postDataJSON();
     expect(body).toMatchObject({
       title: 'Uploaded design notes',

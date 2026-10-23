@@ -91,7 +91,7 @@ export function LessonSourceForm({
           </label>
         )}
         <button type="submit" disabled={busy}>
-          {busy ? 'Generating…' : 'Generate lesson'}
+          {busy ? 'Generating…' : 'Create from source'}
         </button>
       </form>
       {error && <p className="lesson-source-error" role="alert">{error}</p>}

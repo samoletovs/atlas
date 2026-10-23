@@ -34,6 +34,12 @@
   font: inherit;
 }
 
+.lesson-source-form :is(input, select) {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .lesson-source-form button {
   background: var(--fg);
   color: var(--bg);
