@@ -229,6 +229,13 @@ export interface QueueLessonInput {
   depth?: 'intro' | 'intermediate' | 'deep';
 }
 
+export interface DocumentLessonInput extends QueueLessonInput {
+  documentName: string;
+  documentText: string;
+}
+
+export const DOCUMENT_SOURCE_MAX_BYTES = 16_000;
+
 export async function queueLesson(input: QueueLessonInput, repoId?: string): Promise<Lesson> {
   const res = await fetch(withRepoId('/api/lessons/queue', repoId), {
     method: 'POST',
@@ -244,7 +251,11 @@ export async function queueLesson(input: QueueLessonInput, repoId?: string): Pro
  * Returns a fully populated, published lesson.
  */
 export async function generateLessonNow(
-  input: QueueLessonInput,
+  input: QueueLessonInput & {
+    source_type?: 'document';
+    source_name?: string;
+    source_context?: string;
+  },
   repoId?: string,
 ): Promise<Lesson> {
   const res = await fetch(withRepoId('/api/lessons/generate', repoId), {
@@ -263,6 +274,19 @@ export async function generateLessonNow(
     throw new Error(`generateLessonNow failed: ${res.status}${detail}`);
   }
   return recoverLessonSuggestions((await res.json()) as Lesson);
+}
+
+export async function generateLessonFromDocument(
+  input: DocumentLessonInput,
+  repoId?: string,
+): Promise<Lesson> {
+  const { documentName, documentText, ...lesson } = input;
+  return generateLessonNow({
+    ...lesson,
+    source_type: 'document',
+    source_name: documentName,
+    source_context: documentText,
+  }, repoId);
 }
 
 // ---------- Admin (P2): manage repoShares ----------
