@@ -131,7 +131,7 @@ function endpoint(content, existing = [], options = {}) {
     '../shared/lessonSuggestions.js': loadShared('lessonSuggestions.ts', {}),
   };
   vm.runInNewContext(options.ask ? askCompiled : compiled, {
-    exports, Error,
+    exports, Error, Buffer,
     require(name) {
       assert.ok(Object.hasOwn(dependencies, name), `Unexpected external dependency: ${name}`);
       return dependencies[name];
@@ -221,6 +221,40 @@ test('reuses an existing lesson without another model call or write', async () =
   assert.equal(response.jsonBody.id, 'existing');
   assert.equal(handler.calls(), 0);
   assert.equal(handler.writes.length, 0);
+});
+
+test('generates from uploaded document text and keeps its source attribution', async () => {
+  const existing = lesson({ id: 'existing', status: 'published' });
+  const sourceText = 'A design note with useful facts.';
+  const handler = endpoint(JSON.stringify(lesson()), [existing]);
+  const response = await handler.run({
+    title: 'Design notes', topic: 'design-notes', source_type: 'document',
+    source_name: 'design.md', source_context: sourceText,
+  });
+  assert.equal(response.status, 201);
+  assert.equal(handler.calls(), 1, 'document lessons are independent from existing topic lessons');
+  assert.deepEqual(JSON.parse(handler.requests[0].messages[1].content).source_document, {
+    name: 'design.md', text: sourceText,
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(handler.writes[0].source_event)), {
+    type: 'document',
+    ref: 'design.md',
+    summary: 'Generated from uploaded document: design.md',
+  });
+});
+
+test('rejects invalid or oversized document content before inference', async () => {
+  for (const source of [
+    { source_type: 'document', source_name: {}, source_context: 'text' },
+    { source_type: 'document', source_name: 'notes.md', source_context: '  ' },
+    { source_type: 'document', source_name: 'notes.md', source_context: 'é'.repeat(8_001) },
+    { source_type: 'external-api', source_name: 'source', source_context: 'text' },
+  ]) {
+    const handler = endpoint(JSON.stringify(lesson()));
+    assert.equal((await handler.run(source)).status, 400);
+    assert.equal(handler.calls(), 0);
+    assert.equal(handler.writes.length, 0);
+  }
 });
 
 test('only deep lessons select Sol with low reasoning and a finite completion ceiling', async () => {

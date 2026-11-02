@@ -467,7 +467,10 @@ export class PortalBackend {
       if (!isRecord(body) || typeof body.title !== 'string' || typeof body.topic !== 'string'
         || !isLanguage(body.language) || (body.depth !== undefined && !isDepth(body.depth))
         || (body.rationale !== undefined && typeof body.rationale !== 'string')
-        || (body.source_lesson_id !== undefined && typeof body.source_lesson_id !== 'string')) {
+        || (body.source_lesson_id !== undefined && typeof body.source_lesson_id !== 'string')
+        || (body.source_type !== undefined && body.source_type !== 'document')
+        || (body.source_type === 'document'
+          && (typeof body.source_name !== 'string' || typeof body.source_context !== 'string'))) {
         await this.unexpected(route, 'Invalid generation payload');
         return;
       }
@@ -488,7 +491,9 @@ export class PortalBackend {
         body: url.pathname.endsWith('/queue') ? '' : '## Generated fixture lesson\n\nA deterministic Example Company example.',
         suggested_next: [],
         created_at: new Date().toISOString(),
-        source_event: { type: 'suggestion', ref: input.source_lesson_id ?? '', summary: input.rationale ?? 'Example Company learning request' },
+        source_event: body.source_type === 'document'
+          ? { type: 'document', ref: body.source_name as string, summary: `Generated from uploaded document: ${body.source_name as string}` }
+          : { type: 'suggestion', ref: input.source_lesson_id ?? '', summary: input.rationale ?? 'Example Company learning request' },
       };
       if (queued) queued.status = 'archived';
       data.all.unshift(generated);
