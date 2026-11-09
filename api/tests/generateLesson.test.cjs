@@ -282,8 +282,12 @@ test('every request body uses max_completion_tokens and reasoning_effort, never 
   const { completionOptions } = loadShared('openaiClient.ts', {}, {
     '@azure/identity': {}, openai: {},
   });
-  for (const [model, effort] of [['gpt-6-luna', 'none'], ['gpt-6-sol', 'low']]) {
-    const body = completionOptions(model, 1024);
+  // Retiring names must not fall back to the legacy max_tokens/temperature body either.
+  for (const [model, effort] of [
+    ['gpt-6-luna', 'none'], ['gpt-6-sol', 'low'],
+    ['gpt-4o-mini', 'none'], ['gpt-4o', 'none'], ['gpt-4.1', 'none'],
+  ]) {
+    const body = completionOptions(model, 1024, 0.4);
     assert.deepEqual(Object.keys(body).sort(), ['max_completion_tokens', 'reasoning_effort']);
     assert.equal(body.max_completion_tokens, 1024);
     assert.equal(body.reasoning_effort, effort);

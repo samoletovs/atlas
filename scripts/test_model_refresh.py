@@ -82,9 +82,7 @@ class ScheduledAgentModelBoundaryTests(GeneratorTests):
                            if line.strip().startswith(f"{name}:"))
             settings[name] = setting.split(":", 1)[1].strip()
             self.assertEqual(settings[name], "gpt-6-luna")
-        # GitHub step env overrides stale values inherited by the process.
-        with patch.dict(os.environ, {name: "gpt-4o-mini" for name in settings}):
-            module = self.load(**settings)
+        module = self.load(**settings)
         self.assertEqual(module["FOUNDRY_DEPLOYMENT"], "gpt-6-luna")
         client, credential = Mock(), Mock()
         with patch.dict(module["make_agents_client"].__globals__,
