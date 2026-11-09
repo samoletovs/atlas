@@ -278,19 +278,17 @@ test('a matching explicit deployment and model uses the full Sol reservation', a
   assert.ok(api.budget.getBudgetStats().spentUsd > 0.04096, 'uncached input must also be reserved');
 });
 
-for (const model of ['gpt-4.1', 'gpt-4o-mini']) {
-  test(`${model} remains callable for both tiers`, async () => {
-    const api = endpoint(JSON.stringify(lesson()), [], { env: {
-      FOUNDRY_DEPLOYMENT: model, FOUNDRY_MODEL: model,
-      FOUNDRY_LESSON_DEPLOYMENT: model, FOUNDRY_LESSON_MODEL: model,
-    } });
-    assert.equal((await api.run()).status, 201);
-    assert.equal((await api.run({ depth: 'deep' })).status, 201);
-    assert.ok(api.requests.every(r => r.model === model && r.temperature === 0.4));
-    assert.deepEqual(api.requests.map(r => r.max_tokens), [1024, 4096]);
-    assert.ok(api.requests.every(r => r.max_completion_tokens === undefined && r.reasoning_effort === undefined));
+test('every request body uses max_completion_tokens and reasoning_effort, never max_tokens or sampling', () => {
+  const { completionOptions } = loadShared('openaiClient.ts', {}, {
+    '@azure/identity': {}, openai: {},
   });
-}
+  for (const [model, effort] of [['gpt-6-luna', 'none'], ['gpt-6-sol', 'low']]) {
+    const body = completionOptions(model, 1024);
+    assert.deepEqual(Object.keys(body).sort(), ['max_completion_tokens', 'reasoning_effort']);
+    assert.equal(body.max_completion_tokens, 1024);
+    assert.equal(body.reasoning_effort, effort);
+  }
+});
 
 test('a budget too small for the whole request refuses inference and publication', async () => {
   const api = endpoint(JSON.stringify(lesson()), [], { env: { ATLAS_DAILY_BUDGET_USD: '0.0001' } });
@@ -445,6 +443,10 @@ for (const [deployment, model] of [
   ['gpt-6-sol', 'gpt-6-luna'],
   ['gpt-6-sol', 'gpt-4o-mini'],
   ['gpt-6-luna', 'gpt-6-sol'],
+  // Retiring 2027-04-14: no longer admitted, even as a matching pair.
+  ['gpt-4o-mini', 'gpt-4o-mini'],
+  ['gpt-4.1', 'gpt-4.1'],
+  ['gpt-4o', 'gpt-4o'],
   ['unverified-sol-alias', 'gpt-6-luna'],
 ]) {
   for (const route of ['routine lesson', 'deep lesson', 'follow-up']) {

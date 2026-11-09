@@ -42,8 +42,6 @@ interface SolBudget {
 export const MODEL_PRICES: Record<ActualModel, { input: number; output: number; cachedInput: number }> = {
   'gpt-6-luna': { input: 0.10, output: 0.50, cachedInput: 0.01 },
   'gpt-6-sol': { input: 2.00, output: 10.00, cachedInput: 0.20 },
-  'gpt-4o-mini': { input: 0.15, output: 0.60, cachedInput: 0.075 },
-  'gpt-4.1': { input: 2.00, output: 8.00, cachedInput: 0.50 },
 };
 
 interface DailyBudget {
