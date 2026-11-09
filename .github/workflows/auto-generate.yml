@@ -53,8 +53,10 @@ jobs:
           COSMOS_ENDPOINT: ${{ vars.COSMOS_ENDPOINT }}
           COSMOS_DATABASE: ${{ vars.COSMOS_DATABASE }}
           FOUNDRY_PROJECT_ENDPOINT: ${{ vars.FOUNDRY_PROJECT_ENDPOINT }}
-          FOUNDRY_DEPLOYMENT: ${{ vars.FOUNDRY_DEPLOYMENT }}
-          FOUNDRY_AGENT_DEPLOYMENT: ${{ vars.FOUNDRY_AGENT_DEPLOYMENT || 'gpt-6-luna' }}
+          # Pin both values with this code revision. Stale repository variables
+          # must not break the interval between deployment and their cleanup.
+          FOUNDRY_DEPLOYMENT: gpt-6-luna
+          FOUNDRY_AGENT_DEPLOYMENT: gpt-6-luna
           ATLAS_OWNER_LOGIN: ${{ vars.ATLAS_OWNER_LOGIN }}
           # Optional. If present, raises GitHub anonymous rate-limit (60/h)
           # to 5000/h and unlocks private-repo reads. Anonymous mode still

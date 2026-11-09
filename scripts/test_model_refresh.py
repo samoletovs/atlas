@@ -57,11 +57,26 @@ class ScheduledAgentModelBoundaryTests(GeneratorTests):
         self.assertNotIn("top_p", definition)
         self.assertEqual(definition["reasoning"], {"effort": "none"})
 
-    def test_workflow_defaults_scheduled_agents_to_luna(self) -> None:
+    def test_workflow_pins_luna_before_repository_variables_are_flipped(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github" / "workflows" / "auto-generate.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("vars.FOUNDRY_AGENT_DEPLOYMENT || 'gpt-6-luna'", workflow)
+        settings = {}
+        for name in ("FOUNDRY_DEPLOYMENT", "FOUNDRY_AGENT_DEPLOYMENT"):
+            self.assertNotIn(f"vars.{name}", workflow)
+            setting = next(line.strip() for line in workflow.splitlines()
+                           if line.strip().startswith(f"{name}:"))
+            settings[name] = setting.split(":", 1)[1].strip()
+            self.assertEqual(settings[name], "gpt-6-luna")
+        # GitHub step env overrides stale values inherited by the process.
+        with patch.dict(os.environ, {name: "gpt-4o-mini" for name in settings}):
+            module = self.load(**settings)
+        self.assertEqual(module["FOUNDRY_DEPLOYMENT"], "gpt-6-luna")
+        client, credential = Mock(), Mock()
+        with patch.dict(module["make_agents_client"].__globals__,
+                        AIProjectClient=client, DefaultAzureCredential=credential):
+            module["make_agents_client"]()
+        client.assert_called_once()
         self.assertNotRegex(workflow, r"gpt-4|4o-mini|o4-mini|o3-mini")
         self.assertIn("cron: '0 */8 * * *'", workflow)
 

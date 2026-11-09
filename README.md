@@ -215,8 +215,13 @@ status is not `completed`, or whose text is empty, raises and is never parsed
 or published.
 
 Any other deployment (including the retiring gpt-4o-mini) is refused before a
-client opens, so set the repository variable `FOUNDRY_AGENT_DEPLOYMENT` to
-`gpt-6-luna` (or delete it) when this change merges. If the first scheduled run after the migration returns 401/403 on `agents` or
+client opens. The scheduled workflow pins both deployment environment values to
+`gpt-6-luna` with the code revision; it does not consume the repository model
+variables. Existing variables can therefore remain unchanged throughout the
+deploy-to-flip window without breaking a scheduled run. The orchestrator may
+align those unused variables only after this PR is merged and deployed, with a
+successful production deployment run on the merge commit verified first.
+If the first scheduled run after the migration returns 401/403 on `agents` or
 `/openai/v1/responses`, check the CI identity's Foundry project role
 (**Azure AI User** covers agent versions and responses).
 
