@@ -48,9 +48,8 @@ FOUNDRY_DEPLOYMENT = (
     or os.environ.get("FOUNDRY_DEPLOYMENT")
     or "gpt-6-luna"
 )
-# GPT-6 applies temperature/top_p only with reasoning effort "none"; with any
-# other effort every agent run fails with HTTP 400 although create_version
-# accepts the definition. Each agent keeps its existing temperature.
+# Luna accepts temperature with reasoning effort "none"; measured default/low
+# effort cases reject it at run time even though create_version accepts it.
 SCHEDULED_AGENT_MODELS = frozenset({"gpt-6-luna"})
 AGENT_REASONING_EFFORT = "none"
 USER_ID = os.environ.get("ATLAS_USER_ID", "sam")  # legacy v1 schema (seed/enhance modes)

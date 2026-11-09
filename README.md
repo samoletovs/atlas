@@ -188,7 +188,7 @@ configured USD150 credit); Azure billing alerts do not stop model calls.
 Global short-context USD/M prices: Luna **0.10 input / 0.50 output / 0.01
 cached input**; Sol **2 / 10 / 0.20**. Reservations do not assume a cache hit.
 The retiring models (gpt-4o, gpt-4o-mini, gpt-4.1*, retiring 2027-04-14) are
-no longer accepted. Every request sends `max_completion_tokens` and
+no longer accepted. API chat requests send `max_completion_tokens` and
 `reasoning_effort` (Luna `none`, Sol `low`); never `max_tokens` or temperature.
 Rollback is a git revert, not a model-variable change.
 
@@ -205,9 +205,12 @@ and takes precedence over legacy `FOUNDRY_DEPLOYMENT`.
 The prompt agents are `atlas-teacher`, `atlas-planner` and `atlas-enhancer`
 (its instructions embed the known-topic list). Their definitions keep their
 existing temperatures (teacher 0.4, enhancer 0.2, planner 0.5) and always pair
-them with `reasoning.effort=none`: GPT-6 applies temperature only at effort
-`none` and otherwise rejects every agent run with HTTP 400, although
-`create_version` accepts the definition. `top_p` is never set.
+them with `reasoning.effort=none`: Luna accepts this combination. The measured
+default/low-effort cases reject temperature at run time with HTTP 400, although
+`create_version` accepts the definition. `top_p` is never set. These are the
+same configured sampling values, not evidence of equivalent output behavior or
+lesson quality across models. The repository's planner smoke demonstrates
+request acceptance and valid planner JSON only.
 Each run compares model, instructions and model parameters with the latest
 stored version and calls `agents.create_version` **only when they differ**, so
 scheduled runs do not accumulate versions. Every call is a single-shot
