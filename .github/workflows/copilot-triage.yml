@@ -98,12 +98,10 @@ jobs:
             }
 
             const deploymentName = process.env.TRIAGE_DEPLOYMENT || 'gpt-6-luna';
-            if (!['gpt-6-luna', 'gpt-4.1', 'gpt-4o-mini'].includes(deploymentName)) {
+            if (deploymentName !== 'gpt-6-luna') {
               throw new Error('TRIAGE_DEPLOYMENT must name a supported actual model');
             }
-            const tokenOptions = deploymentName === 'gpt-6-luna'
-              ? { max_completion_tokens: 300, reasoning_effort: 'none' }
-              : { max_tokens: 300, temperature: 0.1 };
+            const tokenOptions = { max_completion_tokens: 300, reasoning_effort: 'none' };
             const apiUrl = `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=2025-01-01-preview`;
 
             const triagePrompt = `You are a project maintainer triaging a GitHub issue.
