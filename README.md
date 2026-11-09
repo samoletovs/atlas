@@ -187,8 +187,10 @@ configured USD150 credit); Azure billing alerts do not stop model calls.
 
 Global short-context USD/M prices: Luna **0.10 input / 0.50 output / 0.01
 cached input**; Sol **2 / 10 / 0.20**. Reservations do not assume a cache hit.
-Rollback sets both deployment/model pairs to `gpt-4o-mini` or `gpt-4.1`.
-Legacy models receive `max_tokens` and temperature, without reasoning knobs.
+The retiring models (gpt-4o, gpt-4o-mini, gpt-4.1*, retiring 2027-04-14) are
+no longer accepted. Every request sends `max_completion_tokens` and
+`reasoning_effort` (Luna `none`, Sol `low`); never `max_tokens` or temperature.
+Rollback is a git revert, not a model-variable change.
 
 ### Scheduled agents are separate
 
@@ -197,25 +199,24 @@ runs [generate_lessons.py](scripts/generate_lessons.py) against the Foundry
 project endpoint using the **new Foundry Agent Service** (`azure-ai-projects`
 2.x). The classic Agents API (`azure-ai-agents`, threads/runs, `asst_` ids)
 retires on 31 March 2027 and is no longer used.
-`FOUNDRY_AGENT_DEPLOYMENT` is deliberately pinned to `gpt-4o-mini` by default
+`FOUNDRY_AGENT_DEPLOYMENT` defaults to `gpt-6-luna` (the only accepted value)
 and takes precedence over legacy `FOUNDRY_DEPLOYMENT`.
 
-The prompt agents are `atlas-teacher` (temperature 0.4), `atlas-planner` (0.5)
-and `atlas-enhancer` (0.2; its instructions embed the known-topic list). Each
-run compares model, instructions and temperature with the latest stored
-version and calls `agents.create_version` **only when they differ**, so
+The prompt agents are `atlas-teacher`, `atlas-planner` and `atlas-enhancer`
+(its instructions embed the known-topic list). Their definitions carry
+`reasoning.effort=none` and **no temperature/top_p**: GPT-6 accepts such a
+definition at `create_version` but rejects every agent run with HTTP 400.
+Each run compares model, instructions and model parameters with the latest
+stored version and calls `agents.create_version` **only when they differ**, so
 scheduled runs do not accumulate versions. Every call is a single-shot
 Responses request (`store=False`, no conversation) carrying an
 `agent_reference` pinned to that exact name **and version**. A response whose
 status is not `completed`, or whose text is empty, raises and is never parsed
 or published.
 
-The script still lacks the API's daily dollar guard and has no reviewed
-reasoning settings, so it refuses GPT-6 before opening a client. **Do not
-promote all three agents by changing the shared repository variable.** A
-separately budgeted, synthetic gate is needed before that path can use GPT-6.
-Keep `FOUNDRY_AGENT_DEPLOYMENT=gpt-4o-mini` (or `gpt-4.1` rollback). If the
-first scheduled run after the migration returns 401/403 on `agents` or
+Any other deployment (including the retiring gpt-4o-mini) is refused before a
+client opens, so set the repository variable `FOUNDRY_AGENT_DEPLOYMENT` to
+`gpt-6-luna` (or delete it) when this change merges. If the first scheduled run after the migration returns 401/403 on `agents` or
 `/openai/v1/responses`, check the CI identity's Foundry project role
 (**Azure AI User** covers agent versions and responses).
 
@@ -230,8 +231,8 @@ redeploy with empty secret parameters.
 
 [copilot-triage.yml](.github/workflows/copilot-triage.yml), job `triage`,
 defaults repository variable `TRIAGE_DEPLOYMENT` to Luna, cap 300 and
-`reasoning_effort=none`. Rollback accepts only `gpt-4o-mini` or `gpt-4.1`
-with legacy parameters; nano overrides are rejected. Incomplete/refused output requires human
+`reasoning_effort=none`. Only Luna is accepted; retiring (gpt-4o*, gpt-4.1*)
+and other overrides are rejected. Incomplete/refused output requires human
 review rather than assigning work.
 
 The workflow still uses the existing endpoint and API-key secrets, not the
