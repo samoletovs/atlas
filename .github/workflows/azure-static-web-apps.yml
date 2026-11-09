@@ -19,6 +19,13 @@ on:
       - '.gitignore'
       - 'LICENSE'
 
+# One run at a time per branch or PR. Batch merges otherwise start overlapping
+# deploys, the platform cancels one of them, and the newest commit can be the
+# casualty. A superseded pending run is dropped; the latest one still deploys.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build_and_deploy_job:
     # Fork PRs get a read-only token and no secrets, so the SWA token is empty
