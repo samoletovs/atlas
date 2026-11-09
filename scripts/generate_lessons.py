@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 import os
 import re
 import sys
@@ -29,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import PromptAgentDefinition
+from azure.ai.projects.models import PromptAgentDefinition, Reasoning
 from azure.core.exceptions import ResourceNotFoundError
 from azure.cosmos import CosmosClient, exceptions
 from azure.identity import DefaultAzureCredential
@@ -46,8 +45,13 @@ FOUNDRY_PROJECT_ENDPOINT = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
 FOUNDRY_DEPLOYMENT = (
     os.environ.get("FOUNDRY_AGENT_DEPLOYMENT")
     or os.environ.get("FOUNDRY_DEPLOYMENT")
-    or "gpt-4o-mini"
+    or "gpt-6-luna"
 )
+# GPT-6 rejects sampling parameters at run time (HTTP 400 "temperature is not
+# supported") even though create_version accepts them, so definitions carry a
+# reasoning effort instead.
+SCHEDULED_AGENT_MODELS = frozenset({"gpt-6-luna"})
+AGENT_REASONING_EFFORT = "none"
 USER_ID = os.environ.get("ATLAS_USER_ID", "sam")  # legacy v1 schema (seed/enhance modes)
 OWNER_LOGIN = os.environ.get("ATLAS_OWNER_LOGIN", "samoletovs")  # v2 schema (pending mode)
 
@@ -255,11 +259,10 @@ class AgentRef:
 
 
 def make_agents_client() -> FoundryAgents:
-    if FOUNDRY_DEPLOYMENT not in {"gpt-4o-mini", "gpt-4.1"}:
+    if FOUNDRY_DEPLOYMENT not in SCHEDULED_AGENT_MODELS:
         raise ValueError(
-            "Scheduled atlas agents remain on gpt-4o-mini/gpt-4.1: GPT-6 reasoning "
-            "controls and model support need a separate promotion gate. "
-            "Set FOUNDRY_AGENT_DEPLOYMENT; the API's selective Sol path is independent."
+            f"Unsupported scheduled agent deployment {FOUNDRY_DEPLOYMENT!r}: "
+            f"set FOUNDRY_AGENT_DEPLOYMENT to one of {sorted(SCHEDULED_AGENT_MODELS)}."
         )
     return FoundryAgents(
         project=AIProjectClient(
@@ -279,28 +282,40 @@ def _definition_matches(existing: Any, wanted: PromptAgentDefinition) -> bool:
         return False
     if getattr(existing, "tools", None):
         return False
-    have, want = getattr(existing, "temperature", None), wanted.temperature
-    if have is None or want is None:
-        return have is want
-    return math.isclose(float(have), float(want), abs_tol=1e-9)
+    if getattr(existing, "temperature", None) is not None or getattr(existing, "top_p", None) is not None:
+        return False
+    return _reasoning_effort(existing) == _reasoning_effort(wanted)
+
+
+def _reasoning_effort(definition: Any) -> str | None:
+    reasoning = getattr(definition, "reasoning", None)
+    if reasoning is None:
+        return None
+    if isinstance(reasoning, dict):
+        return reasoning.get("effort")
+    return getattr(reasoning, "effort", None)
+
+
+def build_agent_definition(instructions: str) -> PromptAgentDefinition:
+    """Scheduled agent definition: no temperature/top_p, which GPT-6 rejects at run time."""
+    return PromptAgentDefinition(
+        model=FOUNDRY_DEPLOYMENT,
+        instructions=instructions,
+        reasoning=Reasoning(effort=AGENT_REASONING_EFFORT),
+    )
 
 
 def _ensure_agent_version(
     client: FoundryAgents,
     name: str,
     instructions: str,
-    temperature: float,
 ) -> AgentRef:
     """Return the agent version to pin, creating one only when the definition changed.
 
     Agent versions are immutable, so re-running with unchanged instructions reuses
     the latest version instead of adding a new one on every scheduled run.
     """
-    definition = PromptAgentDefinition(
-        model=FOUNDRY_DEPLOYMENT,
-        instructions=instructions,
-        temperature=temperature,
-    )
+    definition = build_agent_definition(instructions)
     try:
         latest = client.project.agents.get(name).versions.latest
     except ResourceNotFoundError:
@@ -345,7 +360,7 @@ def _invoke_agent(client: FoundryAgents, agent: AgentRef, user_prompt: str, what
 def get_or_create_atlas_agent(client: FoundryAgents) -> AgentRef:
     """Return the pinned atlas-teacher version, creating a version only on change."""
     # slightly creative for lesson writing
-    return _ensure_agent_version(client, "atlas-teacher", LIBRARIAN_INSTRUCTIONS, 0.4)
+    return _ensure_agent_version(client, "atlas-teacher", LIBRARIAN_INSTRUCTIONS)
 
 
 def get_or_create_enhancer_agent(client: FoundryAgents, known_topics: list[str]) -> AgentRef:
@@ -358,7 +373,7 @@ def get_or_create_enhancer_agent(client: FoundryAgents, known_topics: list[str])
         "%KNOWN_TOPICS%",
         "\n".join(f"   - {t}" for t in sorted(set(known_topics))) or "   (none yet)",
     )
-    return _ensure_agent_version(client, "atlas-enhancer", instructions, 0.2)
+    return _ensure_agent_version(client, "atlas-enhancer", instructions)
 
 
 def generate_lesson(
@@ -1351,7 +1366,7 @@ Output exactly N items in the `items` array. No prose around the JSON. No markdo
 
 def _get_or_create_planner_agent(client: FoundryAgents) -> AgentRef:
     """Return the pinned atlas-planner version, creating a version only on change."""
-    return _ensure_agent_version(client, "atlas-planner", PLANNER_INSTRUCTIONS, 0.5)
+    return _ensure_agent_version(client, "atlas-planner", PLANNER_INSTRUCTIONS)
 
 
 def _fetch_auto_repos(cosmos: CosmosClient) -> list[dict[str, Any]]:

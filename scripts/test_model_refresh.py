@@ -20,35 +20,49 @@ class GeneratorTests(unittest.TestCase):
             return runpy.run_path(str(Path(__file__).with_name("generate_lessons.py")))
 
 
+RETIRING_MODELS = ("gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o3", "o4-mini")
+
+
 class ScheduledAgentModelBoundaryTests(GeneratorTests):
-    def test_api_default_cannot_silently_upgrade_the_scheduled_agents(self) -> None:
-        for model in ("gpt-6-luna", "gpt-6-sol"):
-            module = self.load(FOUNDRY_DEPLOYMENT=model)
-            client = Mock()
-            with (
-                patch.dict(module["make_agents_client"].__globals__, AIProjectClient=client),
-                self.assertRaisesRegex(ValueError, "separate promotion gate"),
-            ):
-                module["make_agents_client"]()
-            client.assert_not_called()
+    def test_default_resolves_to_luna(self) -> None:
+        self.assertEqual(self.load()["FOUNDRY_DEPLOYMENT"], "gpt-6-luna")
 
-    def test_explicit_rollback_overrides_the_api_model(self) -> None:
-        for model in ("gpt-4o-mini", "gpt-4.1"):
-            module = self.load(FOUNDRY_DEPLOYMENT="gpt-6-luna", FOUNDRY_AGENT_DEPLOYMENT=model)
-            self.assertEqual(module["FOUNDRY_DEPLOYMENT"], model)
-            client, credential = Mock(), Mock()
-            with patch.dict(
-                module["make_agents_client"].__globals__,
-                AIProjectClient=client, DefaultAzureCredential=credential,
-            ):
-                module["make_agents_client"]()
-            client.assert_called_once()
+    def test_retiring_or_premium_models_are_refused_before_any_client(self) -> None:
+        for model in (*RETIRING_MODELS, "gpt-6-sol"):
+            with self.subTest(model=model):
+                module = self.load(FOUNDRY_AGENT_DEPLOYMENT=model)
+                client = Mock()
+                with (
+                    patch.dict(module["make_agents_client"].__globals__, AIProjectClient=client),
+                    self.assertRaisesRegex(ValueError, "Unsupported scheduled agent deployment"),
+                ):
+                    module["make_agents_client"]()
+                client.assert_not_called()
 
-    def test_workflow_keeps_scheduled_agents_on_the_supported_rollback(self) -> None:
+    def test_luna_creates_the_client(self) -> None:
+        module = self.load(FOUNDRY_DEPLOYMENT="gpt-6-sol", FOUNDRY_AGENT_DEPLOYMENT="gpt-6-luna")
+        self.assertEqual(module["FOUNDRY_DEPLOYMENT"], "gpt-6-luna")
+        client, credential = Mock(), Mock()
+        with patch.dict(
+            module["make_agents_client"].__globals__,
+            AIProjectClient=client, DefaultAzureCredential=credential,
+        ):
+            module["make_agents_client"]()
+        client.assert_called_once()
+
+    def test_luna_definition_has_no_sampling_parameters(self) -> None:
+        definition = self.load()["build_agent_definition"]("Teach.").as_dict()
+        self.assertEqual(definition["model"], "gpt-6-luna")
+        self.assertNotIn("temperature", definition)
+        self.assertNotIn("top_p", definition)
+        self.assertEqual(definition["reasoning"], {"effort": "none"})
+
+    def test_workflow_defaults_scheduled_agents_to_luna(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[1] / ".github" / "workflows" / "auto-generate.yml"
         ).read_text(encoding="utf-8")
-        self.assertIn("vars.FOUNDRY_AGENT_DEPLOYMENT || 'gpt-4o-mini'", workflow)
+        self.assertIn("vars.FOUNDRY_AGENT_DEPLOYMENT || 'gpt-6-luna'", workflow)
+        self.assertNotRegex(workflow, r"gpt-4|4o-mini|o4-mini|o3-mini")
         self.assertIn("cron: '0 */8 * * *'", workflow)
 
 
