@@ -203,9 +203,11 @@ retires on 31 March 2027 and is no longer used.
 and takes precedence over legacy `FOUNDRY_DEPLOYMENT`.
 
 The prompt agents are `atlas-teacher`, `atlas-planner` and `atlas-enhancer`
-(its instructions embed the known-topic list). Their definitions carry
-`reasoning.effort=none` and **no temperature/top_p**: GPT-6 accepts such a
-definition at `create_version` but rejects every agent run with HTTP 400.
+(its instructions embed the known-topic list). Their definitions keep their
+existing temperatures (teacher 0.4, enhancer 0.2, planner 0.5) and always pair
+them with `reasoning.effort=none`: GPT-6 applies temperature only at effort
+`none` and otherwise rejects every agent run with HTTP 400, although
+`create_version` accepts the definition. `top_p` is never set.
 Each run compares model, instructions and model parameters with the latest
 stored version and calls `agents.create_version` **only when they differ**, so
 scheduled runs do not accumulate versions. Every call is a single-shot

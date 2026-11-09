@@ -50,12 +50,26 @@ class ScheduledAgentModelBoundaryTests(GeneratorTests):
             module["make_agents_client"]()
         client.assert_called_once()
 
-    def test_luna_definition_has_no_sampling_parameters(self) -> None:
-        definition = self.load()["build_agent_definition"]("Teach.").as_dict()
-        self.assertEqual(definition["model"], "gpt-6-luna")
-        self.assertNotIn("temperature", definition)
-        self.assertNotIn("top_p", definition)
-        self.assertEqual(definition["reasoning"], {"effort": "none"})
+    def test_luna_agents_keep_their_temperature_only_with_reasoning_none(self) -> None:
+        module = self.load()
+        created = []
+        project = Mock()
+        project.agents.get.side_effect = module["ResourceNotFoundError"]("absent")
+        project.agents.create_version.side_effect = (
+            lambda **kw: created.append(kw) or SimpleNamespace(version="2"))
+        client = SimpleNamespace(project=project)
+        module["get_or_create_atlas_agent"](client)
+        module["get_or_create_enhancer_agent"](client, ["a"])
+        module["_get_or_create_planner_agent"](client)
+        temperatures = {}
+        for call in created:
+            definition = call["definition"].as_dict()
+            self.assertEqual(definition["model"], "gpt-6-luna")
+            self.assertNotIn("top_p", definition)
+            if "temperature" in definition or "top_p" in definition:
+                self.assertEqual(definition.get("reasoning"), {"effort": "none"})
+            temperatures[call["agent_name"]] = definition.get("temperature")
+        self.assertEqual(temperatures, {"atlas-teacher": 0.4, "atlas-enhancer": 0.2, "atlas-planner": 0.5})
 
     def test_workflow_pins_luna_before_repository_variables_are_flipped(self) -> None:
         workflow = (

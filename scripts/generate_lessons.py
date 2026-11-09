@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import os
 import re
 import sys
@@ -47,9 +48,9 @@ FOUNDRY_DEPLOYMENT = (
     or os.environ.get("FOUNDRY_DEPLOYMENT")
     or "gpt-6-luna"
 )
-# GPT-6 rejects sampling parameters at run time (HTTP 400 "temperature is not
-# supported") even though create_version accepts them, so definitions carry a
-# reasoning effort instead.
+# GPT-6 applies temperature/top_p only with reasoning effort "none"; with any
+# other effort every agent run fails with HTTP 400 although create_version
+# accepts the definition. Each agent keeps its existing temperature.
 SCHEDULED_AGENT_MODELS = frozenset({"gpt-6-luna"})
 AGENT_REASONING_EFFORT = "none"
 USER_ID = os.environ.get("ATLAS_USER_ID", "sam")  # legacy v1 schema (seed/enhance modes)
@@ -282,7 +283,13 @@ def _definition_matches(existing: Any, wanted: PromptAgentDefinition) -> bool:
         return False
     if getattr(existing, "tools", None):
         return False
-    if getattr(existing, "temperature", None) is not None or getattr(existing, "top_p", None) is not None:
+    if getattr(existing, "top_p", None) is not None:
+        return False
+    have, want = getattr(existing, "temperature", None), wanted.temperature
+    if have is None or want is None:
+        if have is not want:
+            return False
+    elif not math.isclose(float(have), float(want), abs_tol=1e-9):
         return False
     return _reasoning_effort(existing) == _reasoning_effort(wanted)
 
@@ -296,11 +303,12 @@ def _reasoning_effort(definition: Any) -> str | None:
     return getattr(reasoning, "effort", None)
 
 
-def build_agent_definition(instructions: str) -> PromptAgentDefinition:
-    """Scheduled agent definition: no temperature/top_p, which GPT-6 rejects at run time."""
+def build_agent_definition(instructions: str, temperature: float) -> PromptAgentDefinition:
+    """Scheduled agent definition: the path's temperature, always paired with reasoning "none"."""
     return PromptAgentDefinition(
         model=FOUNDRY_DEPLOYMENT,
         instructions=instructions,
+        temperature=temperature,
         reasoning=Reasoning(effort=AGENT_REASONING_EFFORT),
     )
 
@@ -309,13 +317,14 @@ def _ensure_agent_version(
     client: FoundryAgents,
     name: str,
     instructions: str,
+    temperature: float,
 ) -> AgentRef:
     """Return the agent version to pin, creating one only when the definition changed.
 
     Agent versions are immutable, so re-running with unchanged instructions reuses
     the latest version instead of adding a new one on every scheduled run.
     """
-    definition = build_agent_definition(instructions)
+    definition = build_agent_definition(instructions, temperature)
     try:
         latest = client.project.agents.get(name).versions.latest
     except ResourceNotFoundError:
@@ -360,7 +369,7 @@ def _invoke_agent(client: FoundryAgents, agent: AgentRef, user_prompt: str, what
 def get_or_create_atlas_agent(client: FoundryAgents) -> AgentRef:
     """Return the pinned atlas-teacher version, creating a version only on change."""
     # slightly creative for lesson writing
-    return _ensure_agent_version(client, "atlas-teacher", LIBRARIAN_INSTRUCTIONS)
+    return _ensure_agent_version(client, "atlas-teacher", LIBRARIAN_INSTRUCTIONS, 0.4)
 
 
 def get_or_create_enhancer_agent(client: FoundryAgents, known_topics: list[str]) -> AgentRef:
@@ -373,7 +382,7 @@ def get_or_create_enhancer_agent(client: FoundryAgents, known_topics: list[str])
         "%KNOWN_TOPICS%",
         "\n".join(f"   - {t}" for t in sorted(set(known_topics))) or "   (none yet)",
     )
-    return _ensure_agent_version(client, "atlas-enhancer", instructions)
+    return _ensure_agent_version(client, "atlas-enhancer", instructions, 0.2)
 
 
 def generate_lesson(
@@ -1366,7 +1375,7 @@ Output exactly N items in the `items` array. No prose around the JSON. No markdo
 
 def _get_or_create_planner_agent(client: FoundryAgents) -> AgentRef:
     """Return the pinned atlas-planner version, creating a version only on change."""
-    return _ensure_agent_version(client, "atlas-planner", PLANNER_INSTRUCTIONS)
+    return _ensure_agent_version(client, "atlas-planner", PLANNER_INSTRUCTIONS, 0.5)
 
 
 def _fetch_auto_repos(cosmos: CosmosClient) -> list[dict[str, Any]]:
