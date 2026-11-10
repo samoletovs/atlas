@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import PromptAgentDefinition
+from azure.ai.projects.models import PromptAgentDefinition, Reasoning
 from azure.core.exceptions import ResourceNotFoundError
 from azure.cosmos import CosmosClient, exceptions
 from azure.identity import DefaultAzureCredential
@@ -46,8 +46,12 @@ FOUNDRY_PROJECT_ENDPOINT = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
 FOUNDRY_DEPLOYMENT = (
     os.environ.get("FOUNDRY_AGENT_DEPLOYMENT")
     or os.environ.get("FOUNDRY_DEPLOYMENT")
-    or "gpt-4o-mini"
+    or "gpt-6-luna"
 )
+# Luna accepts temperature with reasoning effort "none"; measured default/low
+# effort cases reject it at run time even though create_version accepts it.
+SCHEDULED_AGENT_MODELS = frozenset({"gpt-6-luna"})
+AGENT_REASONING_EFFORT = "none"
 USER_ID = os.environ.get("ATLAS_USER_ID", "sam")  # legacy v1 schema (seed/enhance modes)
 OWNER_LOGIN = os.environ.get("ATLAS_OWNER_LOGIN", "samoletovs")  # v2 schema (pending mode)
 
@@ -255,11 +259,10 @@ class AgentRef:
 
 
 def make_agents_client() -> FoundryAgents:
-    if FOUNDRY_DEPLOYMENT not in {"gpt-4o-mini", "gpt-4.1"}:
+    if FOUNDRY_DEPLOYMENT not in SCHEDULED_AGENT_MODELS:
         raise ValueError(
-            "Scheduled atlas agents remain on gpt-4o-mini/gpt-4.1: GPT-6 reasoning "
-            "controls and model support need a separate promotion gate. "
-            "Set FOUNDRY_AGENT_DEPLOYMENT; the API's selective Sol path is independent."
+            f"Unsupported scheduled agent deployment {FOUNDRY_DEPLOYMENT!r}: "
+            f"set FOUNDRY_AGENT_DEPLOYMENT to one of {sorted(SCHEDULED_AGENT_MODELS)}."
         )
     return FoundryAgents(
         project=AIProjectClient(
@@ -279,10 +282,34 @@ def _definition_matches(existing: Any, wanted: PromptAgentDefinition) -> bool:
         return False
     if getattr(existing, "tools", None):
         return False
+    if getattr(existing, "top_p", None) is not None:
+        return False
     have, want = getattr(existing, "temperature", None), wanted.temperature
     if have is None or want is None:
-        return have is want
-    return math.isclose(float(have), float(want), abs_tol=1e-9)
+        if have is not want:
+            return False
+    elif not math.isclose(float(have), float(want), abs_tol=1e-9):
+        return False
+    return _reasoning_effort(existing) == _reasoning_effort(wanted)
+
+
+def _reasoning_effort(definition: Any) -> str | None:
+    reasoning = getattr(definition, "reasoning", None)
+    if reasoning is None:
+        return None
+    if isinstance(reasoning, dict):
+        return reasoning.get("effort")
+    return getattr(reasoning, "effort", None)
+
+
+def build_agent_definition(instructions: str, temperature: float) -> PromptAgentDefinition:
+    """Scheduled agent definition: the path's temperature, always paired with reasoning "none"."""
+    return PromptAgentDefinition(
+        model=FOUNDRY_DEPLOYMENT,
+        instructions=instructions,
+        temperature=temperature,
+        reasoning=Reasoning(effort=AGENT_REASONING_EFFORT),
+    )
 
 
 def _ensure_agent_version(
@@ -296,11 +323,7 @@ def _ensure_agent_version(
     Agent versions are immutable, so re-running with unchanged instructions reuses
     the latest version instead of adding a new one on every scheduled run.
     """
-    definition = PromptAgentDefinition(
-        model=FOUNDRY_DEPLOYMENT,
-        instructions=instructions,
-        temperature=temperature,
-    )
+    definition = build_agent_definition(instructions, temperature)
     try:
         latest = client.project.agents.get(name).versions.latest
     except ResourceNotFoundError:

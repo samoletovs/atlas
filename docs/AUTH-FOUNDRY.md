@@ -1,7 +1,7 @@
 # Foundry / AOAI Auth — atlas
 
 The atlas API in `atlas/api/src/functions/generateLesson.ts` calls Microsoft
-Foundry's Azure OpenAI gpt-4o-mini deployment to generate lessons inline. The
+Foundry's Azure OpenAI `gpt-6-luna` deployment (deep lessons: `gpt-6-sol`) to generate lessons inline. The
 Foundry account has `disableLocalAuth: true`, so API keys are blocked — every
 request must carry an AAD bearer token.
 
@@ -21,7 +21,7 @@ rest). The `openai` Node SDK + `DefaultAzureCredential` pick up the SP via the
 | RBAC role | **Cognitive Services User** |
 | Role scope | `/subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.CognitiveServices/accounts/<account>` |
 | Foundry endpoint | `https://<account>.cognitiveservices.azure.com/` |
-| Deployment | `gpt-4o-mini` |
+| Deployment | `gpt-6-luna` (deep: `gpt-6-sol`) |
 | API version | `2024-08-01-preview` |
 | Token scope | `https://cognitiveservices.azure.com/.default` |
 
@@ -33,7 +33,7 @@ rest). The `openai` Node SDK + `DefaultAzureCredential` pick up the SP via the
 | `AZURE_CLIENT_SECRET` | SP password (rotate yearly) |
 | `AZURE_TENANT_ID` | Tenant |
 | `FOUNDRY_AOAI_ENDPOINT` | Cognitive endpoint |
-| `FOUNDRY_DEPLOYMENT` | `gpt-4o-mini` |
+| `FOUNDRY_DEPLOYMENT` | `gpt-6-luna` |
 | `FOUNDRY_API_VERSION` | `2024-08-01-preview` |
 
 ## Rotating the secret

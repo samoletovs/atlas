@@ -275,7 +275,7 @@ async function callModel(input: GenerateBody, lang: 'en' | 'ru', userId: string)
   await recordEstimatedCost(model, maxTokens, estimateInputTokens(messages, deep ? 'deep-lesson' : 'routine'));
   const completion = await client.chat.completions.create({
     model: deployment,
-    ...completionOptions(model, maxTokens, 0.4),
+    ...completionOptions(model, maxTokens),
     response_format: { type: 'json_object' },
     messages,
   });

@@ -19,7 +19,7 @@ const AOAI_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 let _defaultClient: AzureOpenAI | null = null;
 
-const SUPPORTED_MODELS = ['gpt-6-luna', 'gpt-6-sol', 'gpt-4.1', 'gpt-4o-mini'] as const;
+const SUPPORTED_MODELS = ['gpt-6-luna', 'gpt-6-sol'] as const;
 export type ActualModel = typeof SUPPORTED_MODELS[number];
 export type ModelPurpose = 'routine' | 'deep-lesson';
 
@@ -28,19 +28,16 @@ export interface TextMessage {
   content: string;
 }
 
-export function completionOptions(model: ActualModel, maxTokens: number, temperature: number):
-  | { max_completion_tokens: number; reasoning_effort: 'none' | 'low' }
-  | { max_tokens: number; temperature: number } {
+// GPT-6 rejects max_tokens (HTTP 400); temperature/top_p are not relied on.
+export function completionOptions(model: ActualModel, maxTokens: number):
+  { max_completion_tokens: number; reasoning_effort: 'none' | 'low' } {
   if (!Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 4096) {
     throw new Error('Invalid model completion ceiling');
   }
-  if (model === 'gpt-6-luna' || model === 'gpt-6-sol') {
-    return {
-      max_completion_tokens: maxTokens,
-      reasoning_effort: model === 'gpt-6-sol' ? 'low' : 'none',
-    };
-  }
-  return { max_tokens: maxTokens, temperature };
+  return {
+    max_completion_tokens: maxTokens,
+    reasoning_effort: model === 'gpt-6-sol' ? 'low' : 'none',
+  };
 }
 
 export function estimateInputTokens(messages: readonly TextMessage[], purpose: ModelPurpose): number {

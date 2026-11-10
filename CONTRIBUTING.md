@@ -8,7 +8,7 @@ Issues, ideas, and pull requests are welcome.
 - **Frontend:** React 19 + Vite + TypeScript (in `src/`)
 - **Backend:** Azure Functions v4, Node 20, TypeScript (in `api/`)
 - **Database:** Cosmos DB (NoSQL), serverless
-- **Model provider:** Azure OpenAI (`gpt-4o-mini`)
+- **Model provider:** Azure OpenAI (`gpt-6-luna` routine, `gpt-6-sol` for budget-gated deep lessons)
 - **Auth:** GitHub OAuth via Azure Static Web Apps
 - See `AGENTS.md` for full architectural notes and conventions.
 

@@ -24,7 +24,7 @@ The Azure default URL `https://proud-plant-03d885403.7.azurestaticapps.net` also
 | Static Web App | `atlas-swa` | westeurope (Free tier requires) | Hosts frontend + Functions |
 | Log Analytics | `atlas-logs` | swedencentral | Diagnostic store |
 | App Insights | `atlas-appi` | swedencentral | Telemetry |
-| **Foundry agent** | `atlas-teacher` | (in foundryLab account) | gpt-4o-mini, temperature 0.4 |
+| **Foundry agent** | `atlas-teacher` | (in foundryLab account) | gpt-6-luna, reasoning none, no temperature |
 
 Reuses `foundryLab-aiservices` (no new AI Services account; €0 incremental).
 
@@ -87,7 +87,7 @@ The agent **already exists** (id stable, name `atlas-teacher`); rerunning the sc
 | Cosmos DB serverless setup | €0 (no data yet) |
 | SWA Free tier | €0 |
 | App Insights / Log Analytics | €0 (under free tier limits) |
-| Foundry agent + 5 lesson generations (~25K tokens, gpt-4o-mini) | <€0.01 |
+| Foundry agent + 5 lesson generations (~25K tokens, gpt-6-luna) | <€0.01 |
 | **Total** | **~€0.01** |
 
 Idle cost going forward: ~€0/month.

@@ -11,7 +11,10 @@ Personal-teacher app + agent. Single user (Sam) for now. Watches GitHub activity
 - **Database:** Cosmos DB (NoSQL) — containers: `lessons`, `topics`, `activity_events`
 - **Models:** prepared selective pilot on `foundrylab-aiservices`: routine API
   `gpt-6-luna`, explicitly deep lessons `gpt-6-sol` (both v2026-09-22).
-  Scheduled Foundry agents stay on `gpt-4o-mini` until separately verified.
+  Scheduled Foundry prompt agents use `gpt-6-luna` with reasoning effort `none`
+  and their existing temperatures (never temperature without effort `none`,
+  never top_p). No retiring model (gpt-4o*, gpt-4.1*, o3/o4-mini) is
+  accepted anywhere.
 - **Auth:** GitHub OAuth via Static Web Apps built-in auth. Identity =
   GitHub handle; user docs are partitioned by `userId = login.toLowerCase()`.
   See [`docs/AUTH-GOOGLE.md`](docs/AUTH-GOOGLE.md) for the (deprecated)

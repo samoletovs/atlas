@@ -177,7 +177,7 @@ export async function askLesson(
     await recordEstimatedCost(model, MAX_ANSWER_TOKENS, inputTokens);
     const completion = await client.chat.completions.create({
       model: deployment,
-      ...completionOptions(model, MAX_ANSWER_TOKENS, 0.4),
+      ...completionOptions(model, MAX_ANSWER_TOKENS),
       messages,
     });
     const choice = completion.choices[0];

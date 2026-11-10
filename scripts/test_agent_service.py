@@ -12,11 +12,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from azure.ai.projects.models import PromptAgentDefinition
+from azure.ai.projects.models import PromptAgentDefinition, Reasoning
 from azure.core.exceptions import ResourceNotFoundError
 
 SCRIPTS = Path(__file__).resolve().parent
 REPO = SCRIPTS.parent
+NO_REASONING = Reasoning(effort="none")
 LESSON = {"title": "T", "body": "Lesson body.", "topic": "x", "citations": [], "suggested_next": []}
 
 
@@ -125,7 +126,8 @@ class ResponseInvocationTests(AgentServiceTests):
 class AgentVersioningTests(AgentServiceTests):
     def test_unchanged_definition_reuses_the_latest_version(self) -> None:
         self.project.agents.get.return_value = stored_agent(
-            "4", model="gpt-4o-mini", instructions=self.module["LIBRARIAN_INSTRUCTIONS"], temperature=0.4,
+            "4", model="gpt-6-luna", instructions=self.module["LIBRARIAN_INSTRUCTIONS"],
+            reasoning=NO_REASONING, temperature=0.4,
         )
         ref = self.module["get_or_create_atlas_agent"](self.client)
         self.assertEqual((ref.name, ref.version), ("atlas-teacher", "4"))
@@ -136,9 +138,19 @@ class AgentVersioningTests(AgentServiceTests):
         planner = self.module["PLANNER_INSTRUCTIONS"]
         for name, stored in (
             ("missing", ResourceNotFoundError("absent")),
-            ("instructions", stored_agent("1", model="gpt-4o-mini", instructions="old", temperature=0.5)),
-            ("temperature", stored_agent("1", model="gpt-4o-mini", instructions=planner, temperature=0.9)),
-            ("model", stored_agent("1", model="gpt-4.1", instructions=planner, temperature=0.5)),
+            ("instructions", stored_agent("1", model="gpt-6-luna", instructions="old",
+                                          reasoning=NO_REASONING, temperature=0.5)),
+            ("live-v1", stored_agent("1", model="gpt-4o-mini", instructions=planner, temperature=0.5)),
+            ("luna-temperature-without-reasoning", stored_agent("1", model="gpt-6-luna",
+                                                                instructions=planner, temperature=0.5)),
+            ("temperature", stored_agent("1", model="gpt-6-luna", instructions=planner,
+                                         reasoning=NO_REASONING, temperature=0.9)),
+            ("no-temperature", stored_agent("1", model="gpt-6-luna", instructions=planner,
+                                            reasoning=NO_REASONING)),
+            ("top_p", stored_agent("1", model="gpt-6-luna", instructions=planner,
+                                   reasoning=NO_REASONING, temperature=0.5, top_p=0.9)),
+            ("reasoning", stored_agent("1", model="gpt-6-luna", instructions=planner,
+                                       reasoning=Reasoning(effort="low"), temperature=0.5)),
         ):
             with self.subTest(name=name):
                 self.project.reset_mock()
@@ -153,8 +165,10 @@ class AgentVersioningTests(AgentServiceTests):
                 kwargs = self.project.agents.create_version.call_args.kwargs
                 self.assertEqual(kwargs["agent_name"], "atlas-planner")
                 definition = kwargs["definition"]
-                self.assertEqual((definition.model, definition.instructions, definition.temperature),
-                                 ("gpt-4o-mini", planner, 0.5))
+                self.assertEqual((definition.model, definition.instructions), ("gpt-6-luna", planner))
+                self.assertEqual(definition.as_dict()["reasoning"], {"effort": "none"})
+                self.assertEqual(definition.as_dict()["temperature"], 0.5)
+                self.assertNotIn("top_p", definition.as_dict())
 
     def test_enhancer_version_follows_the_known_topic_set(self) -> None:
         self.project.agents.create_version.return_value = SimpleNamespace(version="9")
@@ -167,7 +181,7 @@ class AgentVersioningTests(AgentServiceTests):
         self.project.reset_mock()
         self.project.agents.get.side_effect = None
         self.project.agents.get.return_value = stored_agent(
-            "9", model="gpt-4o-mini", instructions=instructions, temperature=0.2,
+            "9", model="gpt-6-luna", instructions=instructions, reasoning=NO_REASONING, temperature=0.2,
         )
         self.assertEqual(self.module["get_or_create_enhancer_agent"](self.client, ["a", "b"]).version, "9")
         self.project.agents.create_version.assert_not_called()
