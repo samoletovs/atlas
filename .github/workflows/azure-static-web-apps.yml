@@ -36,7 +36,11 @@ jobs:
     if: >-
       (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed'))
       && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && github.actor != 'dependabot[bot]'
+    # Dependabot PRs run every test step before the deploy: they are the only
+    # check on a dependency bump, and pr-janitor merges what passes. Before this
+    # the whole job was skipped for them, so the only green check on a bump was
+    # the merge workflow itself. Dependabot runs get no SWA secret, so the three
+    # deploy steps below skip for that actor instead.
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     steps:
@@ -92,6 +96,7 @@ jobs:
           echo "build output verified"
 
       - name: Verify deployment token is configured
+        if: github.actor != 'dependabot[bot]'
         # Azure/static-web-apps-deploy logs "Build will not be uploaded as
         # deployment_token was not found" and still exits 0 when this secret is
         # empty — that is exactly how run 8b88f86 reported success on 2026-08-17
@@ -106,6 +111,7 @@ jobs:
           fi
 
       - name: Build And Deploy
+        if: github.actor != 'dependabot[bot]'
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
@@ -124,6 +130,7 @@ jobs:
           output_location: ""
 
       - name: Verify deployment actually happened
+        if: github.actor != 'dependabot[bot]'
         # Belt-and-suspenders for the same silent-skip failure mode: even with
         # a token present, the action only sets this output on a real deploy.
         # An empty output here means the step exited 0 without shipping anything.
