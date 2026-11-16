@@ -12,13 +12,13 @@
     "test": "node --test tests/*.test.cjs"
   },
   "dependencies": {
-    "@azure/cosmos": "^4.10.0",
-    "@azure/functions": "^4.16.2",
-    "@azure/identity": "^4.13.2",
-    "openai": "^7.52.0"
+    "@azure/cosmos": "^4.10.2",
+    "@azure/functions": "^4.17.1",
+    "@azure/identity": "^4.14.1",
+    "openai": "^7.56.0"
   },
   "devDependencies": {
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.6",
     "typescript": "^6.0.3"
   },
   "overrides": {
