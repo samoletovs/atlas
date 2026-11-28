@@ -28,6 +28,6 @@
     "@vitejs/plugin-react": "^6.3.0",
     "typescript": "^6.0.3",
     "vite": "^8.3.8",
-    "vite-plugin-pwa": "^1.1.1"
+    "vite-plugin-pwa": "^2.0.0"
   }
 }
